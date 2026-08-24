@@ -1,0 +1,432 @@
+:root {
+  color: #202924;
+  background: #efece2;
+  font-family: Aptos, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #202924;
+  --muted-ink: #667069;
+  --paper: #f7f4ea;
+  --paper-deep: #e4dfd0;
+  --line: rgba(32, 41, 36, 0.2);
+  --verdigris: #0b6b61;
+  --verdigris-soft: #dcebe5;
+  --rust: #a34d2c;
+  --rust-soft: #f2ddd3;
+  --shadow: 0 24px 80px rgba(52, 56, 49, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: #efece2;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+a {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgba(11, 107, 97, 0.35);
+  outline-offset: 4px;
+}
+
+.foundation-page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 28px clamp(22px, 5vw, 76px) 24px;
+  background:
+    radial-gradient(circle at 87% 17%, rgba(11, 107, 97, 0.11), transparent 24rem),
+    linear-gradient(145deg, #f8f5eb 0%, #eeeade 58%, #e6e1d4 100%);
+}
+
+.paper-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.38;
+  background-image:
+    linear-gradient(rgba(32, 41, 36, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(32, 41, 36, 0.055) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, black, transparent 90%);
+}
+
+.site-header,
+.hero,
+.health-section,
+.site-footer {
+  position: relative;
+  z-index: 1;
+  width: min(1180px, 100%);
+  margin-inline: auto;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+  font-family: Baskerville, Cambria, serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.wordmark-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  font-family: Aptos, "Segoe UI", sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.phase-stamp,
+.overline,
+.health-eyebrow,
+.site-footer {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.phase-stamp {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  color: var(--muted-ink);
+  background: rgba(247, 244, 234, 0.58);
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.18fr) minmax(0, 1fr);
+  gap: clamp(24px, 5vw, 78px);
+  align-items: end;
+  padding: clamp(72px, 11vh, 126px) 0 clamp(56px, 8vh, 88px);
+}
+
+.hero-index {
+  align-self: start;
+  color: var(--verdigris);
+  font-family: Baskerville, Cambria, serif;
+  font-size: clamp(60px, 8vw, 112px);
+  font-style: italic;
+  line-height: 0.78;
+  opacity: 0.32;
+}
+
+.overline {
+  margin: 0 0 20px;
+  color: var(--verdigris);
+}
+
+.hero h1 {
+  max-width: 900px;
+  margin: 0;
+  font-family: Baskerville, Cambria, "Times New Roman", serif;
+  font-size: clamp(64px, 10.5vw, 148px);
+  font-weight: 400;
+  letter-spacing: -0.065em;
+  line-height: 0.78;
+}
+
+.subtitle {
+  max-width: 780px;
+  margin: 32px 0 0;
+  color: var(--ink);
+  font-family: Baskerville, Cambria, serif;
+  font-size: clamp(20px, 2.4vw, 31px);
+  line-height: 1.25;
+}
+
+.intro {
+  max-width: 680px;
+  margin: 24px 0 0;
+  color: var(--muted-ink);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.health-section {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.health-card {
+  width: min(860px, 100%);
+  padding: clamp(26px, 4vw, 48px);
+  border: 1px solid var(--line);
+  background: rgba(247, 244, 234, 0.86);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.health-card::before {
+  display: block;
+  width: 52px;
+  height: 3px;
+  margin-bottom: 26px;
+  background: var(--verdigris);
+  content: "";
+}
+
+.health-card--degraded::before,
+.health-card--unreachable::before {
+  background: var(--rust);
+}
+
+.health-card__heading {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.health-eyebrow {
+  margin: 0 0 10px;
+  color: var(--muted-ink);
+}
+
+.health-card h2 {
+  max-width: 650px;
+  margin: 0;
+  font-family: Baskerville, Cambria, serif;
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.status-glyph {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+
+.status-glyph span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--verdigris);
+  box-shadow: 0 0 0 6px rgba(11, 107, 97, 0.13);
+}
+
+.health-card--checking .status-glyph span {
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+.health-card--degraded .status-glyph span,
+.health-card--unreachable .status-glyph span {
+  background: var(--rust);
+  box-shadow: 0 0 0 6px rgba(163, 77, 44, 0.13);
+}
+
+.health-detail {
+  max-width: 640px;
+  margin: 20px 0 28px;
+  color: var(--muted-ink);
+  line-height: 1.65;
+}
+
+.request-path {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 0;
+  overflow-x: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.request-path i {
+  color: var(--verdigris);
+  font-style: normal;
+}
+
+.health-card__footer {
+  display: flex;
+  gap: 24px;
+  align-items: end;
+  justify-content: space-between;
+  margin-top: 24px;
+}
+
+.health-facts {
+  display: flex;
+  gap: clamp(24px, 5vw, 58px);
+  margin: 0;
+}
+
+.health-facts div {
+  display: grid;
+  gap: 5px;
+}
+
+.health-facts dt {
+  color: var(--muted-ink);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.health-facts dd {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.retry-button {
+  padding: 10px 14px;
+  border: 1px solid var(--rust);
+  color: var(--rust);
+  background: transparent;
+  cursor: pointer;
+}
+
+.retry-button:hover:not(:disabled) {
+  color: var(--paper);
+  background: var(--rust);
+}
+
+.retry-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.site-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 62px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  color: var(--muted-ink);
+  letter-spacing: 0.11em;
+}
+
+.not-found-page {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+  place-items: center;
+  background:
+    linear-gradient(rgba(32, 41, 36, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(32, 41, 36, 0.05) 1px, transparent 1px),
+    var(--paper-deep);
+  background-size: 42px 42px;
+}
+
+.not-found-card {
+  width: min(660px, 100%);
+  padding: clamp(36px, 7vw, 78px);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.not-found-card h1 {
+  margin: 0;
+  font-family: Baskerville, Cambria, serif;
+  font-size: clamp(42px, 7vw, 82px);
+  font-weight: 400;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+}
+
+.not-found-card p:not(.overline) {
+  margin: 24px 0;
+  color: var(--muted-ink);
+  line-height: 1.6;
+}
+
+.not-found-card a {
+  color: var(--verdigris);
+  font-weight: 700;
+  text-underline-offset: 4px;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.7);
+  }
+}
+
+@media (max-width: 720px) {
+  .foundation-page {
+    padding-inline: 18px;
+  }
+
+  .phase-stamp {
+    font-size: 9px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    padding-top: 64px;
+  }
+
+  .hero-index {
+    display: none;
+  }
+
+  .hero h1 {
+    font-size: clamp(54px, 18vw, 86px);
+  }
+
+  .health-card__footer,
+  .site-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .health-facts {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -6,7 +6,48 @@ ResearchWeave is a planned research and engineering SaaS application that brings
 
 ## Current status
 
-ResearchWeave is in the **architecture and legacy-audit stage**. This repository currently contains design documentation only; application, authentication, RAG, agent, database, WebSocket, arXiv, and LLM features have not yet been implemented here.
+ResearchWeave is in **Phase 1 — Foundation**. The repository now contains a runnable full-stack engineering skeleton: a React client, an Express API, PostgreSQL with pgvector, versioned Drizzle migrations, structured logging, configuration validation, and automated tests.
+
+This phase deliberately contains no authentication, collaboration, RAG, agent, document-ingestion, arXiv, WebSocket, or LLM business features. Those capabilities remain planned work.
+
+## Development setup
+
+### Prerequisites
+
+- Node.js 22 or newer
+- npm 11 or newer
+- Docker with Docker Compose
+
+### First run
+
+1. Copy `.env.example` to `.env` and keep the local values or replace them with your own development settings.
+2. Install dependencies with `npm install`.
+3. Start PostgreSQL and pgvector with `docker compose up -d --wait`.
+4. Apply versioned database migrations with `npm run db:migrate`.
+5. Start the client and API together with `npm run dev`.
+
+The Vite client runs at `http://localhost:5173`. The Express API runs at `http://localhost:3001`, and its versioned health endpoint is `GET /api/v1/health`. That endpoint performs a real `SELECT 1` database probe and returns `503` when PostgreSQL is unavailable.
+
+### Quality and production commands
+
+```text
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm start
+```
+
+`npm run build` creates the client and server production artifacts in `dist/`. Run `npm start` after building; Express serves both the API and the client-side application routes.
+
+Database migration commands:
+
+```text
+npm run db:generate
+npm run db:migrate
+```
+
+All runtime configuration is validated centrally on startup. `.env` is ignored by Git; commit only the documented placeholders in `.env.example`.
 
 ## Planned core capabilities
 
