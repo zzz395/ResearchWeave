@@ -2,13 +2,22 @@
 
 **Real-Time Research Collaboration & RAG Agent Platform**
 
-ResearchWeave is a planned research and engineering SaaS application that brings collaborative research spaces, real-time discussion, document knowledge bases, grounded retrieval-augmented generation, arXiv discovery, paper comparison, and tool-calling research agents into one coherent product.
+ResearchWeave is a research and engineering SaaS application beginning with secure accounts and durable Research Spaces. Later product domains remain documented plans rather than shipped functionality.
 
 ## Current status
 
-ResearchWeave has completed **Phase 1 — Foundation** and now includes a runnable full-stack engineering skeleton: a React client, an Express API, PostgreSQL with pgvector, versioned Drizzle migrations, structured logging, configuration validation, and automated tests.
+ResearchWeave has completed **Phase 3 — Authentication + Research Spaces MVP**. It now provides a real end-to-end account and Research Space workflow on the Phase 1 full-stack foundation and the Phase 2 design specification.
 
-**Phase 2 — UI/UX & Design System Specification** documents the future application shell, navigation, design tokens, responsive behavior, accessibility, and screen interactions. It is design/documentation only. Authentication, collaboration, RAG, agent, document-ingestion, arXiv, WebSocket, and LLM business features remain planned work.
+Implemented in the current phase:
+
+- Registration, login, session restoration, protected routes, and logout
+- bcrypt password hashing and opaque server-side sessions in secure cookie settings
+- Responsive authenticated shell with only the implemented Research Spaces navigation
+- Research Space list, empty state, creation, detail, owner editing, and confirmed deletion
+- Membership-scoped reads and owner-only lifecycle authorization
+- Shared Zod API contracts, versioned Drizzle migrations, structured errors, rate limiting, Origin checks, and automated authorization tests
+
+Chat, document ingestion, knowledge bases, RAG, paper research, agents, activity, connections, and realtime collaboration are not implemented in this phase.
 
 ## Development setup
 
@@ -27,6 +36,36 @@ ResearchWeave has completed **Phase 1 — Foundation** and now includes a runnab
 5. Start the client and API together with `npm run dev`.
 
 The Vite client runs at `http://localhost:5173`. The Express API runs at `http://localhost:3001`, and its versioned health endpoint is `GET /api/v1/health`. That endpoint performs a real `SELECT 1` database probe and returns `503` when PostgreSQL is unavailable.
+
+### Authentication behavior
+
+- Registering creates the account and a seven-day server-side session, then opens `/spaces`.
+- Login failures use one generic message for unknown accounts and incorrect passwords.
+- The browser receives only an opaque session token in an `HttpOnly`, `SameSite=Lax` cookie. Production cookies also use `Secure`.
+- The database stores only a SHA-256 hash of the session token; the client does not store authentication truth in local or session storage.
+- Protected routes redirect to `/login` and preserve only a validated same-origin return path.
+- State-changing API calls require the configured `CLIENT_ORIGIN` in addition to normal CORS controls.
+
+### Research Spaces
+
+Authenticated users can create, list, and open spaces for which they have a membership. Space creation and the owner's membership are committed in one database transaction. Members can read a space; only its owner can rename, edit, or delete it. Deleting a space cascades its membership records.
+
+Current routes are limited to `/`, `/login`, `/register`, `/spaces`, `/spaces/new`, `/spaces/:spaceId`, and `/spaces/:spaceId/settings`. Unimplemented product routes are intentionally absent from the router and navigation.
+
+Versioned APIs:
+
+```text
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+GET  /api/v1/auth/session
+POST /api/v1/auth/logout
+
+GET    /api/v1/spaces
+POST   /api/v1/spaces
+GET    /api/v1/spaces/:spaceId
+PATCH  /api/v1/spaces/:spaceId
+DELETE /api/v1/spaces/:spaceId
+```
 
 ### Quality and production commands
 
@@ -49,9 +88,9 @@ npm run db:migrate
 
 All runtime configuration is validated centrally on startup. `.env` is ignored by Git; commit only the documented placeholders in `.env.example`.
 
-## Planned core capabilities
+## Planned capabilities (not implemented)
 
-- Research Spaces with members, connections, and real-time chat
+- Research Space invitations, connections, and real-time chat
 - PDF, Markdown, and TXT document ingestion into knowledge bases
 - Grounded knowledge questions with retrievable source citations
 - Real arXiv paper search and clearly labelled abstract-based summaries

@@ -20,6 +20,8 @@ export class ApiClientError extends Error {
   }
 }
 
+export const AUTH_EXPIRED_EVENT = "researchweave:auth-expired";
+
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
@@ -44,8 +46,10 @@ export async function apiRequest<T>(
   try {
     response = await fetch(path, {
       ...requestOptions,
+      credentials: "include",
       headers: {
         Accept: "application/json",
+        ...(requestOptions.body === undefined ? {} : { "Content-Type": "application/json" }),
         ...headers,
       },
     });
@@ -56,9 +60,12 @@ export async function apiRequest<T>(
     );
   }
 
-  const body = await readJson(response);
+  const body = response.status === 204 ? undefined : await readJson(response);
 
   if (!acceptedStatuses.includes(response.status)) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+    }
     const parsedError = errorEnvelopeSchema.safeParse(body);
     if (parsedError.success) {
       const envelope: ErrorEnvelope = parsedError.data;

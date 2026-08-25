@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { type Express } from "express";
 import helmet from "helmet";
@@ -7,8 +8,14 @@ import type { Logger } from "pino";
 
 import type { Environment } from "./config/env";
 import { createErrorHandler, createNotFoundHandler } from "./middleware/error-handler";
+import { createOriginGuard } from "./middleware/origin-guard";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { createRequestLogger } from "./middleware/request-logger";
+import { createSessionMiddleware, requireAuthentication } from "./modules/auth/middleware";
+import { createAuthRouter } from "./modules/auth/routes";
+import type { AuthService } from "./modules/auth/service";
+import { createSpaceRouter } from "./modules/spaces/routes";
+import type { SpaceService } from "./modules/spaces/service";
 import { createHealthRouter } from "./routes/health";
 import type { DatabaseHealthCheck } from "./types/health";
 
@@ -16,9 +23,17 @@ export interface AppDependencies {
   environment: Environment;
   logger: Logger;
   checkDatabase: DatabaseHealthCheck;
+  authService: AuthService;
+  spaceService: SpaceService;
 }
 
-export function createApp({ environment, logger, checkDatabase }: AppDependencies): Express {
+export function createApp({
+  environment,
+  logger,
+  checkDatabase,
+  authService,
+  spaceService,
+}: AppDependencies): Express {
   const app = express();
 
   app.disable("x-powered-by");
@@ -26,15 +41,20 @@ export function createApp({ environment, logger, checkDatabase }: AppDependencie
   app.use(
     cors({
       origin: environment.CLIENT_ORIGIN,
-      credentials: false,
+      credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     }),
   );
   app.use(express.json({ limit: "64kb" }));
+  app.use(cookieParser());
   app.use(requestIdMiddleware);
   app.use(createRequestLogger(logger));
 
   app.use("/api/v1", createHealthRouter({ checkDatabase, logger }));
+  app.use("/api/v1", createOriginGuard(environment));
+  app.use(createSessionMiddleware(authService, environment));
+  app.use("/api/v1/auth", createAuthRouter({ authService, environment }));
+  app.use("/api/v1/spaces", requireAuthentication, createSpaceRouter(spaceService));
 
   if (environment.NODE_ENV === "production") {
     const clientDirectory = path.resolve(process.cwd(), "dist/client");
