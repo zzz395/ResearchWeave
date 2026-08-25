@@ -274,6 +274,144 @@ describe("authenticated realtime gateway", () => {
     }
   });
 
+  it("does not activate a subscription whose membership is removed during authorization", async () => {
+    const context = await createRealtimeTestServer();
+    let releaseAuthorization: (() => void) | undefined;
+    try {
+      const owner = await register(context.server, "race-owner@example.com", "Race Owner");
+      const removedMember = await register(
+        context.server,
+        "race-removed@example.com",
+        "Removed Member",
+      );
+      const normalMember = await register(
+        context.server,
+        "race-normal@example.com",
+        "Normal Member",
+      );
+      const space = await context.spaceService.createSpace(
+        { name: "Authorization Race Lab", description: null },
+        owner.user.id,
+      );
+      context.spaceRepository.addMember(space.id, removedMember.user.id);
+      context.spaceRepository.addMember(space.id, normalMember.user.id);
+
+      const ownerSocket = await connect(context.wsUrl, owner.cookie);
+      const removedSocket = await connect(context.wsUrl, removedMember.cookie);
+      const normalSocket = await connect(context.wsUrl, normalMember.cookie);
+      const ownerEvents = new EventRecorder(ownerSocket);
+      const removedEvents = new EventRecorder(removedSocket);
+      const normalEvents = new EventRecorder(normalSocket);
+
+      const ownerSubscribe = command("space.subscribe", space.id);
+      send(ownerSocket, ownerSubscribe);
+      await ownerEvents.take((event) => event.type === "space.snapshot");
+      await ownerEvents.take(
+        (event) => event.type === "ack" && event.requestId === ownerSubscribe.requestId,
+      );
+      const normalSubscribe = command("space.subscribe", space.id);
+      send(normalSocket, normalSubscribe);
+      await normalEvents.take((event) => event.type === "space.snapshot");
+      await normalEvents.take(
+        (event) => event.type === "ack" && event.requestId === normalSubscribe.requestId,
+      );
+
+      const authorizationPause = context.pauseNextSpaceAuthorization();
+      releaseAuthorization = authorizationPause.release;
+      const staleSubscribe = command("space.subscribe", space.id);
+      send(removedSocket, staleSubscribe);
+      await authorizationPause.reached;
+
+      await request(context.server)
+        .delete(`/api/v1/spaces/${space.id}/members/${removedMember.user.id}`)
+        .set("Origin", testEnvironment.CLIENT_ORIGIN)
+        .set("Cookie", owner.cookie)
+        .expect(204);
+      authorizationPause.release();
+      releaseAuthorization = undefined;
+
+      const revoked = await removedEvents.take(
+        (event) => event.type === "space.access.revoked" && event.spaceId === space.id,
+      );
+      expect(revoked.type === "space.access.revoked" && revoked.payload.reason).toBe(
+        "membership_removed",
+      );
+      await removedEvents.expectNone(
+        (event) =>
+          event.type === "space.snapshot" ||
+          (event.type === "ack" && event.requestId === staleSubscribe.requestId),
+      );
+      expect(context.hub.getPresentUserIds(space.id)).toEqual(
+        [normalMember.user.id, owner.user.id].sort(),
+      );
+
+      const sendMessage = command("chat.message.send", space.id, { body: "Authorized only" });
+      send(ownerSocket, sendMessage);
+      await ownerEvents.take((event) => event.type === "chat.message.created");
+      await normalEvents.take((event) => event.type === "chat.message.created");
+      await ownerEvents.take(
+        (event) => event.type === "ack" && event.requestId === sendMessage.requestId,
+      );
+      await removedEvents.expectNone((event) => event.type === "chat.message.created");
+
+      const resubscribe = command("space.subscribe", space.id);
+      send(removedSocket, resubscribe);
+      const denied = await removedEvents.take(
+        (event) => event.type === "error" && event.requestId === resubscribe.requestId,
+      );
+      expect(denied.type === "error" && denied.payload.code).toBe("space_not_found");
+    } finally {
+      releaseAuthorization?.();
+      await context.close();
+    }
+  });
+
+  it("does not activate a subscription when its space is deleted during authorization", async () => {
+    const context = await createRealtimeTestServer();
+    let releaseAuthorization: (() => void) | undefined;
+    try {
+      const owner = await register(context.server, "delete-owner@example.com", "Delete Owner");
+      const member = await register(context.server, "delete-member@example.com", "Delete Member");
+      const space = await context.spaceService.createSpace(
+        { name: "Space Deletion Race Lab", description: null },
+        owner.user.id,
+      );
+      context.spaceRepository.addMember(space.id, member.user.id);
+      const memberSocket = await connect(context.wsUrl, member.cookie);
+      const memberEvents = new EventRecorder(memberSocket);
+
+      const authorizationPause = context.pauseNextSpaceAuthorization();
+      releaseAuthorization = authorizationPause.release;
+      const staleSubscribe = command("space.subscribe", space.id);
+      send(memberSocket, staleSubscribe);
+      await authorizationPause.reached;
+
+      await request(context.server)
+        .delete(`/api/v1/spaces/${space.id}`)
+        .set("Origin", testEnvironment.CLIENT_ORIGIN)
+        .set("Cookie", owner.cookie)
+        .expect(204);
+      authorizationPause.release();
+      releaseAuthorization = undefined;
+
+      const revoked = await memberEvents.take(
+        (event) => event.type === "space.access.revoked" && event.spaceId === space.id,
+      );
+      expect(revoked.type === "space.access.revoked" && revoked.payload.reason).toBe(
+        "space_deleted",
+      );
+      await memberEvents.expectNone(
+        (event) =>
+          event.type === "space.snapshot" ||
+          (event.type === "ack" && event.requestId === staleSubscribe.requestId),
+      );
+      expect(context.hub.getPresentUserIds(space.id)).toEqual([]);
+    } finally {
+      releaseAuthorization?.();
+      await context.close();
+    }
+  });
+
   it("deduplicates multi-tab presence and revokes removed members immediately", async () => {
     const context = await createRealtimeTestServer();
     try {

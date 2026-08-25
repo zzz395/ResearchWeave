@@ -14,6 +14,7 @@ import {
   type RealtimeStatus,
   type SpaceRealtimeUpdate,
 } from "./realtime-context";
+import { retainSpaceListener } from "./space-subscription-lifecycle";
 
 interface PendingCommand {
   resolve: () => void;
@@ -155,23 +156,21 @@ export function RealtimeProvider({ children }: PropsWithChildren) {
 
   const subscribeSpace = useCallback(
     (spaceId: string, listener: (event: SpaceRealtimeUpdate) => void) => {
-      const listeners = listenersRef.current.get(spaceId) ?? new Set();
-      const isFirst = listeners.size === 0;
-      listeners.add(listener);
-      listenersRef.current.set(spaceId, listeners);
-      if (isFirst && socketRef.current?.readyState === WebSocket.OPEN) {
-        sendCommand(createCommand("space.subscribe", spaceId));
-      }
-      return () => {
-        const current = listenersRef.current.get(spaceId);
-        current?.delete(listener);
-        if (current && current.size === 0) {
-          listenersRef.current.delete(spaceId);
+      return retainSpaceListener(
+        listenersRef.current,
+        spaceId,
+        listener,
+        (firstSpaceId) => {
           if (socketRef.current?.readyState === WebSocket.OPEN) {
-            sendCommand(createCommand("space.unsubscribe", spaceId));
+            sendCommand(createCommand("space.subscribe", firstSpaceId));
           }
-        }
-      };
+        },
+        (lastSpaceId) => {
+          if (socketRef.current?.readyState === WebSocket.OPEN) {
+            sendCommand(createCommand("space.unsubscribe", lastSpaceId));
+          }
+        },
+      );
     },
     [sendCommand],
   );

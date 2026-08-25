@@ -107,8 +107,9 @@ export function attachRealtimeGateway({
     }
 
     if (command.type === "space.subscribe") {
+      const accessRevision = hub.captureAccessRevision(command.spaceId, state.userId);
       await spaceService.getSpace(command.spaceId, state.userId);
-      hub.subscribe(socket, command.spaceId, command.requestId);
+      if (!hub.subscribeIfCurrent(socket, accessRevision, command.requestId)) return;
       hub.sendAck(socket, command);
       return;
     }

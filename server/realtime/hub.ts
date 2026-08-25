@@ -17,8 +17,17 @@ interface ClientState {
 
 type AccessRevocationReason = "membership_removed" | "space_deleted";
 
+export interface SpaceAccessRevision {
+  spaceId: string;
+  userId: string;
+  memberRevision: number;
+  spaceRevision: number;
+}
+
 export class RealtimeHub {
   private readonly clients = new Map<WebSocket, ClientState>();
+  private readonly memberAccessRevisions = new Map<string, number>();
+  private readonly spaceAccessRevisions = new Map<string, number>();
 
   register(socket: WebSocket, userId: string, sessionHash: string): void {
     this.clients.set(socket, { userId, sessionHash, subscriptions: new Set() });
@@ -38,18 +47,44 @@ export class RealtimeHub {
     return this.clients.get(socket)?.subscriptions.has(spaceId) ?? false;
   }
 
-  subscribe(socket: WebSocket, spaceId: string, requestId: string): void {
+  captureAccessRevision(spaceId: string, userId: string): SpaceAccessRevision {
+    return {
+      spaceId,
+      userId,
+      memberRevision: this.memberAccessRevisions.get(this.memberAccessKey(spaceId, userId)) ?? 0,
+      spaceRevision: this.spaceAccessRevisions.get(spaceId) ?? 0,
+    };
+  }
+
+  subscribeIfCurrent(
+    socket: WebSocket,
+    revision: SpaceAccessRevision,
+    requestId: string,
+  ): boolean {
     const state = this.clients.get(socket);
-    if (!state) return;
-    const wasPresent = this.isUserPresent(spaceId, state.userId);
-    state.subscriptions.add(spaceId);
+    if (!state || state.userId !== revision.userId) return false;
+    if ((this.spaceAccessRevisions.get(revision.spaceId) ?? 0) !== revision.spaceRevision) {
+      this.sendAccessRevoked(socket, revision.spaceId, "space_deleted");
+      return false;
+    }
+    if (
+      (this.memberAccessRevisions.get(this.memberAccessKey(revision.spaceId, revision.userId)) ?? 0) !==
+      revision.memberRevision
+    ) {
+      this.sendAccessRevoked(socket, revision.spaceId, "membership_removed");
+      return false;
+    }
+
+    const wasPresent = this.isUserPresent(revision.spaceId, state.userId);
+    state.subscriptions.add(revision.spaceId);
     this.send(socket, {
       type: "space.snapshot",
-      spaceId,
+      spaceId: revision.spaceId,
       requestId,
-      payload: { presentUserIds: this.getPresentUserIds(spaceId) },
+      payload: { presentUserIds: this.getPresentUserIds(revision.spaceId) },
     });
-    if (!wasPresent) this.broadcastPresence(spaceId);
+    if (!wasPresent) this.broadcastPresence(revision.spaceId);
+    return true;
   }
 
   unsubscribe(socket: WebSocket, spaceId: string): void {
@@ -91,6 +126,8 @@ export class RealtimeHub {
   }
 
   revokeMember(spaceId: string, userId: string): void {
+    const accessKey = this.memberAccessKey(spaceId, userId);
+    this.memberAccessRevisions.set(accessKey, (this.memberAccessRevisions.get(accessKey) ?? 0) + 1);
     let changed = false;
     for (const [socket, state] of this.clients) {
       if (state.userId !== userId || !state.subscriptions.delete(spaceId)) continue;
@@ -101,6 +138,7 @@ export class RealtimeHub {
   }
 
   revokeSpace(spaceId: string): void {
+    this.spaceAccessRevisions.set(spaceId, (this.spaceAccessRevisions.get(spaceId) ?? 0) + 1);
     for (const [socket, state] of this.clients) {
       if (!state.subscriptions.delete(spaceId)) continue;
       this.sendAccessRevoked(socket, spaceId, "space_deleted");
@@ -126,6 +164,10 @@ export class RealtimeHub {
       if (state.userId === userId && state.subscriptions.has(spaceId)) return true;
     }
     return false;
+  }
+
+  private memberAccessKey(spaceId: string, userId: string): string {
+    return `${spaceId}:${userId}`;
   }
 
   private broadcastPresence(spaceId: string): void {
