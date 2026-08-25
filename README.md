@@ -6,9 +6,9 @@ ResearchWeave is a planned research and engineering SaaS application that brings
 
 ## Current status
 
-ResearchWeave is in **Phase 1 — Foundation**. The repository now contains a runnable full-stack engineering skeleton: a React client, an Express API, PostgreSQL with pgvector, versioned Drizzle migrations, structured logging, configuration validation, and automated tests.
+ResearchWeave has completed **Phase 1 — Foundation** and now includes a runnable full-stack engineering skeleton: a React client, an Express API, PostgreSQL with pgvector, versioned Drizzle migrations, structured logging, configuration validation, and automated tests.
 
-This phase deliberately contains no authentication, collaboration, RAG, agent, document-ingestion, arXiv, WebSocket, or LLM business features. Those capabilities remain planned work.
+**Phase 2 — UI/UX & Design System Specification** documents the future application shell, navigation, design tokens, responsive behavior, accessibility, and screen interactions. It is design/documentation only. Authentication, collaboration, RAG, agent, document-ingestion, arXiv, WebSocket, and LLM business features remain planned work.
 
 ## Development setup
 
@@ -66,6 +66,13 @@ All runtime configuration is validated centrally on startup. `.env` is ignored b
 - [Technical architecture](docs/architecture/technical-architecture.md)
 - [Migration map](docs/architecture/migration-map.md)
 - [Implementation roadmap](docs/architecture/implementation-roadmap.md)
+
+## Design documentation
+
+- [UI/UX specification](docs/design/ui-ux-spec.md)
+- [Design system](docs/design/design-system.md)
+- [Navigation and routes](docs/design/navigation-and-routes.md)
+- [Screen specifications](docs/design/screen-specifications.md)
 
 ## Project origin
 
