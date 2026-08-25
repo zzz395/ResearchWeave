@@ -1,8 +1,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Check, Trash2, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import {
   updateSpaceInputSchema,
@@ -10,44 +10,33 @@ import {
 } from "../../../../shared/contracts/spaces";
 import { queryClient } from "../../../app/query-client";
 import { Button } from "../../../components/ui/button";
-import { Alert, ErrorPanel, LoadingLabel, PageLoading } from "../../../components/ui/feedback";
+import { Alert, ErrorPanel, LoadingLabel } from "../../../components/ui/feedback";
 import { InputField, TextareaField } from "../../../components/ui/form-field";
 import { ApiClientError } from "../../../services/api/client";
-import { deleteSpace, getSpace, updateSpace } from "../api/spaces";
-import { Breadcrumb, ContentSection, PageHeader } from "../components/space-page";
+import { deleteSpace, updateSpace } from "../api/spaces";
+import { useSpaceLayout } from "../components/space-layout-context";
 
 export function Component() {
-  const { spaceId = "" } = useParams();
+  const space = useSpaceLayout();
+  const spaceId = space.id;
   const navigate = useNavigate();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const [confirmName, setConfirmName] = useState("");
-  const spaceQuery = useQuery({
-    queryKey: ["spaces", spaceId],
-    queryFn: () => getSpace(spaceId),
-    enabled: Boolean(spaceId),
-  });
   const updateMutation = useMutation({
     mutationFn: (input: UpdateSpaceInput) => updateSpace(spaceId, input),
   });
   const deleteMutation = useMutation({ mutationFn: () => deleteSpace(spaceId) });
 
-  if (spaceQuery.isPending) return <PageLoading label="Loading space settings" />;
-  if (spaceQuery.error || !spaceQuery.data) {
-    const error = spaceQuery.error instanceof ApiClientError ? spaceQuery.error : null;
-    return <ErrorPanel message={error?.message ?? "Space settings could not be loaded."} requestId={error?.requestId} />;
-  }
-  const space = spaceQuery.data;
   if (space.role !== "owner") {
     return (
-      <ContentSection>
-        <Breadcrumb current="Settings" />
+      <section className="rw-space-tab-panel">
         <ErrorPanel
           title="Owner access required"
           message="You can view this space, but only its owner can change settings or delete it."
         />
         <Button asChild variant="secondary"><Link to={`/spaces/${space.id}`}>Return to space</Link></Button>
-      </ContentSection>
+      </section>
     );
   }
 
@@ -90,13 +79,7 @@ export function Component() {
   const deleteError = deleteMutation.error instanceof ApiClientError ? deleteMutation.error : null;
 
   return (
-    <ContentSection>
-      <Breadcrumb current={`${space.name} settings`} />
-      <PageHeader
-        description="Maintain the name and purpose collaborators see for this space."
-        kicker="Owner controls"
-        title="Space settings"
-      />
+    <div className="rw-space-tab-panel">
       <section className="rw-form-panel">
         <div className="rw-section-heading">
           <div><h2>Space details</h2><p>Changes are visible anywhere this space is listed.</p></div>
@@ -161,6 +144,6 @@ export function Component() {
           </Dialog.Portal>
         </Dialog.Root>
       </section>
-    </ContentSection>
+    </div>
   );
 }

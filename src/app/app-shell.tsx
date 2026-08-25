@@ -1,11 +1,12 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, Library, LogOut, Menu, X } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, Library, LogOut, Menu, UsersRound, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { Brand } from "../components/brand";
 import { useAuth } from "../features/auth/auth-state";
+import { REALTIME_ACCESS_REVOKED_EVENT } from "../services/realtime/realtime-context";
 
 function UserMenu({ compact = false }: { compact?: boolean }) {
   const { user, logout } = useAuth();
@@ -70,7 +71,7 @@ function UserMenu({ compact = false }: { compact?: boolean }) {
 function PrimaryNavigation({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav aria-label="Primary navigation" className="rw-primary-nav">
-      <p>Workspace</p>
+      <p>Collaborate</p>
       <NavLink
         className={({ isActive }) => (isActive ? "is-active" : "")}
         onClick={onNavigate}
@@ -79,6 +80,15 @@ function PrimaryNavigation({ onNavigate }: { onNavigate?: () => void }) {
       >
         <Library aria-hidden="true" size={19} />
         <span>Research Spaces</span>
+      </NavLink>
+      <NavLink
+        className={({ isActive }) => (isActive ? "is-active" : "")}
+        onClick={onNavigate}
+        title="Connections"
+        to="/connections"
+      >
+        <UsersRound aria-hidden="true" size={19} />
+        <span>Connections</span>
       </NavLink>
     </nav>
   );
@@ -124,12 +134,30 @@ function MobileNavigation() {
 }
 
 export function AppShell() {
+  const navigate = useNavigate();
+  const [accessNotice, setAccessNotice] = useState("");
+
+  useEffect(() => {
+    const handleRevoked = () => {
+      setAccessNotice("Your access to that Research Space changed. You have been returned to your spaces.");
+      void navigate("/spaces", { replace: true });
+    };
+    window.addEventListener(REALTIME_ACCESS_REVOKED_EVENT, handleRevoked);
+    return () => window.removeEventListener(REALTIME_ACCESS_REVOKED_EVENT, handleRevoked);
+  }, [navigate]);
+
   return (
     <div className="rw-app-shell">
       <a className="rw-skip-link" href="#main-content">Skip to content</a>
       <Sidebar />
       <MobileNavigation />
       <main className="rw-main" id="main-content" tabIndex={-1}>
+        {accessNotice ? (
+          <div className="rw-access-notice" role="status">
+            <span>{accessNotice}</span>
+            <button onClick={() => setAccessNotice("")} type="button">Dismiss</button>
+          </div>
+        ) : null}
         <Outlet />
       </main>
     </div>

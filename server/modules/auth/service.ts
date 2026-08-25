@@ -27,6 +27,10 @@ export interface AuthService {
   logout(token: string): Promise<void>;
 }
 
+export interface AuthEvents {
+  sessionEnded?(tokenHash: string): void;
+}
+
 export function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -40,7 +44,7 @@ function toUser(record: NewUserRecord): User {
   };
 }
 
-export function createAuthService(repository: AuthRepository): AuthService {
+export function createAuthService(repository: AuthRepository, events: AuthEvents = {}): AuthService {
   async function issueSession(user: NewUserRecord): Promise<IssuedSession> {
     const token = randomBytes(32).toString("base64url");
     const now = new Date();
@@ -111,7 +115,9 @@ export function createAuthService(repository: AuthRepository): AuthService {
 
     async logout(token) {
       if (!token) return;
-      await repository.deleteSessionByHash(hashSessionToken(token));
+      const tokenHash = hashSessionToken(token);
+      await repository.deleteSessionByHash(tokenHash);
+      events.sessionEnded?.(tokenHash);
     },
   };
 }

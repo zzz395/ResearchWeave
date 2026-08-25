@@ -16,6 +16,10 @@ export interface SpaceService {
   deleteSpace(spaceId: string, userId: string): Promise<void>;
 }
 
+export interface SpaceAccessEvents {
+  spaceDeleted?(spaceId: string): void;
+}
+
 function toSpace(record: AccessibleSpaceRecord): ResearchSpace {
   return {
     id: record.id,
@@ -34,7 +38,10 @@ function requireOwner(record: AccessibleSpaceRecord): void {
   }
 }
 
-export function createSpaceService(repository: SpaceRepository): SpaceService {
+export function createSpaceService(
+  repository: SpaceRepository,
+  events: SpaceAccessEvents = {},
+): SpaceService {
   return {
     async listSpaces(userId) {
       return (await repository.listForUser(userId)).map(toSpace);
@@ -77,6 +84,7 @@ export function createSpaceService(repository: SpaceRepository): SpaceService {
 
       const deleted = await repository.deleteForOwner(spaceId, userId);
       if (!deleted) throw new AppError(404, "space_not_found", "Research space was not found.");
+      events.spaceDeleted?.(spaceId);
     },
   };
 }

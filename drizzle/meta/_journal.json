@@ -15,6 +15,13 @@
       "when": 1787657848710,
       "tag": "0001_perpetual_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787663719735,
+      "tag": "0002_nosy_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

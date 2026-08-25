@@ -6,18 +6,23 @@ ResearchWeave is a research and engineering SaaS application beginning with secu
 
 ## Current status
 
-ResearchWeave has completed **Phase 3 — Authentication + Research Spaces MVP**. It now provides a real end-to-end account and Research Space workflow on the Phase 1 full-stack foundation and the Phase 2 design specification.
+ResearchWeave has completed **Phase 4 — Collaboration, Members & Realtime Chat**. It now extends the authenticated Research Space boundary with private connections, owner-controlled membership, durable chat, and authenticated realtime delivery.
 
-Implemented in the current phase:
+Implemented through the current phase:
 
 - Registration, login, session restoration, protected routes, and logout
 - bcrypt password hashing and opaque server-side sessions in secure cookie settings
 - Responsive authenticated shell with only the implemented Research Spaces navigation
 - Research Space list, empty state, creation, detail, owner editing, and confirmed deletion
 - Membership-scoped reads and owner-only lifecycle authorization
+- Private connection request, accept/reject/cancel, list, and removal workflows
+- Connection-based member admission, member leave, and immediate access revocation
+- PostgreSQL-backed chat history with stable cursor pagination
+- Authenticated, Origin-validated WebSocket subscriptions and persist-before-broadcast chat
+- Multi-tab-deduplicated presence, heartbeat, bounded reconnect, resubscribe, and REST recovery
 - Shared Zod API contracts, versioned Drizzle migrations, structured errors, rate limiting, Origin checks, and automated authorization tests
 
-Chat, document ingestion, knowledge bases, RAG, paper research, agents, activity, connections, and realtime collaboration are not implemented in this phase.
+Document ingestion, knowledge bases, RAG, paper research, agents, and activity are not implemented in this phase.
 
 ## Development setup
 
@@ -50,7 +55,11 @@ The Vite client runs at `http://localhost:5173`. The Express API runs at `http:/
 
 Authenticated users can create, list, and open spaces for which they have a membership. Space creation and the owner's membership are committed in one database transaction. Members can read a space; only its owner can rename, edit, or delete it. Deleting a space cascades its membership records.
 
-Current routes are limited to `/`, `/login`, `/register`, `/spaces`, `/spaces/new`, `/spaces/:spaceId`, and `/spaces/:spaceId/settings`. Unimplemented product routes are intentionally absent from the router and navigation.
+Owners can add accepted connections as members and remove ordinary members. Members can list the durable membership record and leave a space themselves. Removing a connection does not remove an existing space membership.
+
+Chat history is durable PostgreSQL state and is read through REST with a stable cursor. WebSocket carries only realtime deltas: authenticated clients subscribe to authorized spaces, and messages are persisted before they are broadcast or acknowledged. Presence means that at least one tab for the user is currently subscribed to the space; it is not durable membership truth.
+
+Current routes are limited to `/`, `/login`, `/register`, `/connections`, `/spaces`, `/spaces/new`, `/spaces/:spaceId`, `/spaces/:spaceId/chat`, `/spaces/:spaceId/members`, and `/spaces/:spaceId/settings`. Unimplemented product routes are intentionally absent from the router and navigation.
 
 Versioned APIs:
 
@@ -60,11 +69,23 @@ POST /api/v1/auth/login
 GET  /api/v1/auth/session
 POST /api/v1/auth/logout
 
+GET    /api/v1/connections
+POST   /api/v1/connections/requests
+PATCH  /api/v1/connections/:connectionId
+DELETE /api/v1/connections/:connectionId
+
 GET    /api/v1/spaces
 POST   /api/v1/spaces
 GET    /api/v1/spaces/:spaceId
 PATCH  /api/v1/spaces/:spaceId
 DELETE /api/v1/spaces/:spaceId
+
+GET    /api/v1/spaces/:spaceId/members
+POST   /api/v1/spaces/:spaceId/members
+DELETE /api/v1/spaces/:spaceId/members/:userId
+
+GET    /api/v1/spaces/:spaceId/messages
+WS     /api/v1/realtime
 ```
 
 ### Quality and production commands
@@ -90,7 +111,6 @@ All runtime configuration is validated centrally on startup. `.env` is ignored b
 
 ## Planned capabilities (not implemented)
 
-- Research Space invitations, connections, and real-time chat
 - PDF, Markdown, and TXT document ingestion into knowledge bases
 - Grounded knowledge questions with retrievable source citations
 - Real arXiv paper search and clearly labelled abstract-based summaries
