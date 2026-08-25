@@ -6,24 +6,59 @@ import { createApp } from "./app";
 import { loadEnvironment } from "./config/env";
 import { createLogger } from "./config/logger";
 import { createDatabase } from "./db/client";
+import { createDrizzleChatRepository } from "./modules/chat/repository";
+import { createChatService } from "./modules/chat/service";
+import { createDrizzleConnectionRepository } from "./modules/connections/repository";
+import { createConnectionService } from "./modules/connections/service";
 import { createDrizzleAuthRepository } from "./modules/auth/repository";
 import { createAuthService } from "./modules/auth/service";
+import { createDrizzleMemberRepository } from "./modules/members/repository";
+import { createMemberService } from "./modules/members/service";
 import { createDrizzleSpaceRepository } from "./modules/spaces/repository";
 import { createSpaceService } from "./modules/spaces/service";
+import { attachRealtimeGateway } from "./realtime/gateway";
+import { RealtimeHub } from "./realtime/hub";
 
 const environment = loadEnvironment();
 const logger = createLogger(environment);
 const database = createDatabase(environment.DATABASE_URL);
-const authService = createAuthService(createDrizzleAuthRepository(database));
-const spaceService = createSpaceService(createDrizzleSpaceRepository(database));
+const realtimeHub = new RealtimeHub();
+const authService = createAuthService(createDrizzleAuthRepository(database), {
+  sessionEnded: (tokenHash) => realtimeHub.closeSession(tokenHash),
+});
+const spaceRepository = createDrizzleSpaceRepository(database);
+const connectionRepository = createDrizzleConnectionRepository(database);
+const spaceService = createSpaceService(spaceRepository, {
+  spaceDeleted: (spaceId) => realtimeHub.revokeSpace(spaceId),
+});
+const connectionService = createConnectionService(connectionRepository);
+const memberService = createMemberService(
+  createDrizzleMemberRepository(database),
+  spaceRepository,
+  connectionRepository,
+  { memberRemoved: (spaceId, userId) => realtimeHub.revokeMember(spaceId, userId) },
+);
+const chatService = createChatService(createDrizzleChatRepository(database), spaceRepository);
 const app = createApp({
   environment,
   logger,
   checkDatabase: () => database.checkHealth(),
   authService,
   spaceService,
+  connectionService,
+  memberService,
+  chatService,
 });
 const server = createServer(app);
+const realtimeGateway = attachRealtimeGateway({
+  server,
+  environment,
+  logger,
+  authService,
+  spaceService,
+  chatService,
+  hub: realtimeHub,
+});
 
 server.on("error", (error) => {
   logger.fatal({ errorType: error.name }, "HTTP server failed");
@@ -41,6 +76,7 @@ async function shutdown(signal: NodeJS.Signals) {
   shuttingDown = true;
   logger.info({ signal }, "graceful shutdown started");
 
+  await realtimeGateway.close();
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
   });

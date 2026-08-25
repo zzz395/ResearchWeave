@@ -26,11 +26,17 @@ export const router = createBrowserRouter([
         children: [
           { path: "/spaces", lazy: () => import("../features/spaces/pages/spaces-page") },
           { path: "/spaces/new", lazy: () => import("../features/spaces/pages/new-space-page") },
-          { path: "/spaces/:spaceId", lazy: () => import("../features/spaces/pages/space-detail-page") },
           {
-            path: "/spaces/:spaceId/settings",
-            lazy: () => import("../features/spaces/pages/space-settings-page"),
+            path: "/spaces/:spaceId",
+            lazy: () => import("../features/spaces/components/space-layout"),
+            children: [
+              { index: true, lazy: () => import("../features/spaces/pages/space-detail-page") },
+              { path: "chat", lazy: () => import("../features/chat/pages/space-chat-page") },
+              { path: "members", lazy: () => import("../features/members/pages/space-members-page") },
+              { path: "settings", lazy: () => import("../features/spaces/pages/space-settings-page") },
+            ],
           },
+          { path: "/connections", lazy: () => import("../features/connections/pages/connections-page") },
         ],
       },
     ],

@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const spaceRole = pgEnum("space_role", ["owner", "member"]);
+export const connectionStatus = pgEnum("connection_status", ["pending", "accepted"]);
 
 export const users = pgTable(
   "users",
@@ -101,7 +102,62 @@ export const spaceMembers = pgTable(
   ],
 );
 
+export const connections = pgTable(
+  "connections",
+  {
+    id: uuid("id").primaryKey(),
+    userLowId: uuid("user_low_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    userHighId: uuid("user_high_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    requestedByUserId: uuid("requested_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: connectionStatus("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    respondedAt: timestamp("responded_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    uniqueIndex("connections_user_pair_unique").on(table.userLowId, table.userHighId),
+    index("connections_user_low_id_index").on(table.userLowId),
+    index("connections_user_high_id_index").on(table.userHighId),
+    check("connections_canonical_pair", sql`${table.userLowId} < ${table.userHighId}`),
+    check(
+      "connections_requester_in_pair",
+      sql`${table.requestedByUserId} = ${table.userLowId} or ${table.requestedByUserId} = ${table.userHighId}`,
+    ),
+  ],
+);
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").primaryKey(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => researchSpaces.id, { onDelete: "cascade" }),
+    senderUserId: uuid("sender_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("chat_messages_space_cursor_index").on(table.spaceId, table.createdAt, table.id),
+    index("chat_messages_sender_user_id_index").on(table.senderUserId),
+    check("chat_messages_body_length", sql`char_length(${table.body}) between 1 and 4000`),
+  ],
+);
+
 export type UserRecord = typeof users.$inferSelect;
 export type SessionRecord = typeof sessions.$inferSelect;
 export type ResearchSpaceRecord = typeof researchSpaces.$inferSelect;
 export type SpaceMemberRecord = typeof spaceMembers.$inferSelect;
+export type ConnectionRecord = typeof connections.$inferSelect;
+export type ChatMessageRecord = typeof chatMessages.$inferSelect;
