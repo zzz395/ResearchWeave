@@ -1,29 +1,13 @@
-import pino from "pino";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createApp } from "../../server/app";
-import type { Environment } from "../../server/config/env";
 import { errorEnvelopeSchema } from "../../shared/contracts/error";
 import { healthResponseSchema } from "../../shared/contracts/health";
-
-const testEnvironment: Environment = {
-  NODE_ENV: "test",
-  PORT: 3001,
-  DATABASE_URL: "postgresql://test:test@localhost:5432/test",
-  CLIENT_ORIGIN: "http://localhost:5173",
-  LOG_LEVEL: "silent",
-};
-
-const logger = pino({ level: "silent" });
+import { createTestApp } from "../helpers/create-test-app";
 
 describe("GET /api/v1/health", () => {
   it("returns a healthy response after a successful database probe", async () => {
-    const app = createApp({
-      environment: testEnvironment,
-      logger,
-      checkDatabase: () => Promise.resolve(),
-    });
+    const { app } = createTestApp();
 
     const response = await request(app).get("/api/v1/health").expect(200);
     const result = healthResponseSchema.safeParse(response.body);
@@ -38,11 +22,7 @@ describe("GET /api/v1/health", () => {
   });
 
   it("returns unavailable when the real database boundary fails", async () => {
-    const app = createApp({
-      environment: testEnvironment,
-      logger,
-      checkDatabase: () => Promise.reject(new Error("database offline")),
-    });
+    const { app } = createTestApp(() => Promise.reject(new Error("database offline")));
 
     const response = await request(app).get("/api/v1/health").expect(503);
 
@@ -56,11 +36,7 @@ describe("GET /api/v1/health", () => {
 
 describe("backend error envelope", () => {
   it("returns a sanitized versioned-API 404", async () => {
-    const app = createApp({
-      environment: testEnvironment,
-      logger,
-      checkDatabase: () => Promise.resolve(),
-    });
+    const { app } = createTestApp();
 
     const response = await request(app).get("/api/v1/not-a-route").expect(404);
     const envelope = errorEnvelopeSchema.parse(response.body);

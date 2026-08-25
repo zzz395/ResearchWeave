@@ -6,14 +6,22 @@ import { createApp } from "./app";
 import { loadEnvironment } from "./config/env";
 import { createLogger } from "./config/logger";
 import { createDatabase } from "./db/client";
+import { createDrizzleAuthRepository } from "./modules/auth/repository";
+import { createAuthService } from "./modules/auth/service";
+import { createDrizzleSpaceRepository } from "./modules/spaces/repository";
+import { createSpaceService } from "./modules/spaces/service";
 
 const environment = loadEnvironment();
 const logger = createLogger(environment);
 const database = createDatabase(environment.DATABASE_URL);
+const authService = createAuthService(createDrizzleAuthRepository(database));
+const spaceService = createSpaceService(createDrizzleSpaceRepository(database));
 const app = createApp({
   environment,
   logger,
   checkDatabase: () => database.checkHealth(),
+  authService,
+  spaceService,
 });
 const server = createServer(app);
 
