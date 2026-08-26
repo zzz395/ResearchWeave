@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <opensearch:totalResults>1</opensearch:totalResults>
+  <opensearch:startIndex>10</opensearch:startIndex>
+  <opensearch:itemsPerPage>1</opensearch:itemsPerPage>
+  <entry>
+    <id>http://arxiv.org/abs/2501.12345</id>
+    <updated>2025-01-20T12:00:00Z</updated>
+    <published>2025-01-19T12:00:00Z</published>
+    <title>Paper without optional metadata &amp; placeholders</title>
+    <summary>An abstract that remains real metadata &#38; meaning.</summary>
+    <author><name>Test Author &#x26; Collaborator</name></author>
+    <category term="physics.gen-ph" scheme="http://arxiv.org/schemas/atom" />
+    <arxiv:primary_category term="physics.gen-ph" scheme="http://arxiv.org/schemas/atom" />
+    <link href="http://arxiv.org/abs/2501.12345v1" rel="alternate" type="text/html" />
+    <link href="http://arxiv.org/pdf/2501.12345v1" rel="related" type="application/pdf" title="pdf" />
+  </entry>
+</feed>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>ArXiv Query: search_query=all:learning</title>
+  <id>https://export.arxiv.org/api/query/example</id>
+  <updated>2026-08-26T00:00:00Z</updated>
+  <opensearch:totalResults>42</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <opensearch:itemsPerPage>2</opensearch:itemsPerPage>
+  <entry>
+    <id>http://arxiv.org/abs/1501.00001</id>
+    <updated>2024-02-03T04:05:06Z</updated>
+    <published>2024-01-02T03:04:05Z</published>
+    <title>
+      A   Line-Wrapped
+      Research   Title
+    </title>
+    <summary>
+      First abstract line.
+
+      Second	line with repeated     spacing.
+    </summary>
+    <author><name>  Ada   Lovelace  </name></author>
+    <author><name>Grace
+      Hopper</name></author>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom" />
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom" />
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom" />
+    <category term="I.2.6" scheme="http://arxiv.org/schemas/atom" />
+    <category term="68Q55" scheme="http://www.ams.org/msc" />
+    <arxiv:primary_category term="cs.LG" scheme="http://arxiv.org/schemas/atom" />
+    <arxiv:comment>  12 pages,
+      3 figures  </arxiv:comment>
+    <arxiv:journal_ref> Journal   of Tests
+      10 (2024) </arxiv:journal_ref>
+    <arxiv:doi>10.1000/test.1</arxiv:doi>
+    <link href="http://arxiv.org/abs/1501.00001v2" rel="alternate" type="text/html" />
+    <link href="http://arxiv.org/pdf/1501.00001v2" rel="related" type="application/pdf" title="pdf" />
+  </entry>
+  <entry>
+    <id>https://arxiv.org/abs/0706.0001</id>
+    <updated>2007-06-05T12:00:00Z</updated>
+    <published>2007-06-01T10:00:00Z</published>
+    <title>Single paper title</title>
+    <summary>Single paper abstract.</summary>
+    <author><name>Emmy Noether</name></author>
+    <category term="math.GT" scheme="http://arxiv.org/schemas/atom" />
+    <arxiv:primary_category term="math.GT" scheme="http://arxiv.org/schemas/atom" />
+    <link href="https://arxiv.org/abs/0706.0001v3" rel="alternate" type="text/html" />
+    <link href="https://arxiv.org/pdf/0706.0001v3.pdf" rel="related" type="application/pdf" title="pdf" />
+  </entry>
+</feed>
