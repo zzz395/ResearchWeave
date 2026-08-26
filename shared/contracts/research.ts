@@ -39,6 +39,41 @@ export const researchPaperSearchResultSchema = z.object({
   papers: z.array(researchPaperSchema),
 });
 
+export const persistentResearchPaperSchema = researchPaperSchema.extend({
+  id: z.string().uuid(),
+  fetchedAt: z.string().datetime(),
+});
+
+export const persistentResearchPaperSearchResultSchema = z.object({
+  totalResults: z.number().int().nonnegative(),
+  startIndex: z.number().int().nonnegative(),
+  itemsPerPage: z.number().int().nonnegative(),
+  papers: z.array(persistentResearchPaperSchema),
+});
+
+export const persistentResearchPaperResponseSchema = z.object({
+  paper: persistentResearchPaperSchema,
+});
+
+export const savedPaperSchema = z.object({
+  paper: persistentResearchPaperSchema,
+  savedByUserId: z.string().uuid().nullable(),
+  savedAt: z.string().datetime(),
+});
+
+export const savedPaperListResponseSchema = z.object({
+  savedPapers: z.array(savedPaperSchema),
+});
+
+export const savedPaperResponseSchema = z.object({
+  savedPaper: savedPaperSchema,
+});
+
 export type ResearchSearchQuery = z.infer<typeof researchSearchQuerySchema>;
 export type ResearchPaper = z.infer<typeof researchPaperSchema>;
 export type ResearchPaperSearchResult = z.infer<typeof researchPaperSearchResultSchema>;
+export type PersistentResearchPaper = z.infer<typeof persistentResearchPaperSchema>;
+export type PersistentResearchPaperSearchResult = z.infer<
+  typeof persistentResearchPaperSearchResultSchema
+>;
+export type SavedPaper = z.infer<typeof savedPaperSchema>;

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -155,9 +156,61 @@ export const chatMessages = pgTable(
   ],
 );
 
+export const papers = pgTable(
+  "papers",
+  {
+    id: uuid("id").primaryKey(),
+    canonicalArxivId: text("canonical_arxiv_id").notNull(),
+    versionedArxivId: text("versioned_arxiv_id").notNull(),
+    version: integer("version").notNull(),
+    title: text("title").notNull(),
+    abstract: text("abstract").notNull(),
+    authors: text("authors").array().notNull(),
+    primaryCategory: text("primary_category").notNull(),
+    categories: text("categories").array().notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true, mode: "date" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+    comment: text("comment"),
+    journalRef: text("journal_ref"),
+    doi: text("doi"),
+    absUrl: text("abs_url").notNull(),
+    pdfUrl: text("pdf_url").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("papers_canonical_arxiv_id_unique").on(table.canonicalArxivId),
+    check("papers_version_positive", sql`${table.version} >= 1`),
+    check("papers_authors_nonempty", sql`cardinality(${table.authors}) >= 1`),
+    check("papers_categories_nonempty", sql`cardinality(${table.categories}) >= 1`),
+  ],
+);
+
+export const savedPapers = pgTable(
+  "saved_papers",
+  {
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => researchSpaces.id, { onDelete: "cascade" }),
+    paperId: uuid("paper_id")
+      .notNull()
+      .references(() => papers.id, { onDelete: "restrict" }),
+    savedByUserId: uuid("saved_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    savedAt: timestamp("saved_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.paperId], name: "saved_papers_pk" }),
+    index("saved_papers_space_saved_at_index").on(table.spaceId, table.savedAt),
+    index("saved_papers_saved_by_user_id_index").on(table.savedByUserId),
+  ],
+);
+
 export type UserRecord = typeof users.$inferSelect;
 export type SessionRecord = typeof sessions.$inferSelect;
 export type ResearchSpaceRecord = typeof researchSpaces.$inferSelect;
 export type SpaceMemberRecord = typeof spaceMembers.$inferSelect;
 export type ConnectionRecord = typeof connections.$inferSelect;
 export type ChatMessageRecord = typeof chatMessages.$inferSelect;
+export type PaperRecord = typeof papers.$inferSelect;
+export type SavedPaperRecord = typeof savedPapers.$inferSelect;

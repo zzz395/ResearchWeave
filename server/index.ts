@@ -6,6 +6,7 @@ import { createApp } from "./app";
 import { loadEnvironment } from "./config/env";
 import { createLogger } from "./config/logger";
 import { createDatabase } from "./db/client";
+import { ArxivClient } from "./integrations/arxiv/client";
 import { createDrizzleChatRepository } from "./modules/chat/repository";
 import { createChatService } from "./modules/chat/service";
 import { createDrizzleConnectionRepository } from "./modules/connections/repository";
@@ -14,6 +15,9 @@ import { createDrizzleAuthRepository } from "./modules/auth/repository";
 import { createAuthService } from "./modules/auth/service";
 import { createDrizzleMemberRepository } from "./modules/members/repository";
 import { createMemberService } from "./modules/members/service";
+import { createDrizzlePaperRepository } from "./modules/research/paper-repository";
+import { createDrizzleSavedPaperRepository } from "./modules/research/saved-paper-repository";
+import { createResearchService } from "./modules/research/service";
 import { createDrizzleSpaceRepository } from "./modules/spaces/repository";
 import { createSpaceService } from "./modules/spaces/service";
 import { attachRealtimeGateway } from "./realtime/gateway";
@@ -39,6 +43,11 @@ const memberService = createMemberService(
   { memberRemoved: (spaceId, userId) => realtimeHub.revokeMember(spaceId, userId) },
 );
 const chatService = createChatService(createDrizzleChatRepository(database), spaceRepository);
+const researchService = createResearchService(
+  createDrizzlePaperRepository(database),
+  createDrizzleSavedPaperRepository(database),
+  new ArxivClient(),
+);
 const app = createApp({
   environment,
   logger,
@@ -48,6 +57,7 @@ const app = createApp({
   connectionService,
   memberService,
   chatService,
+  researchService,
 });
 const server = createServer(app);
 const realtimeGateway = attachRealtimeGateway({
