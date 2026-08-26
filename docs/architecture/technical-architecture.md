@@ -26,7 +26,7 @@ This is not a microservice architecture. Module boundaries exist for ownership, 
 
 ## Proposed repository structure
 
-The initial proposal has sensible product feature names but over-centralizes backend `routes/` and `services/`, which would recreate the legacy file-by-layer coupling. It also lacks shared contracts, persistence, integrations, and tests. Use this structure when implementation begins; do not create empty folders prematurely.
+ResearchWeave uses vertical backend modules instead of over-centralized `routes/` and `services/` directories that create file-by-layer coupling. Shared contracts, persistence, integrations, and tests remain explicit architectural boundaries. Add new module directories only when their implementation phase begins; do not create empty folders prematurely.
 
 ```text
 ResearchWeave/
@@ -74,7 +74,7 @@ ResearchWeave/
 
 Each backend module may contain `routes.ts`, `service.ts`, `repository.ts`, `schemas.ts`, and tests when required. Do not create a generic base repository, event bus, or dependency-injection framework. `server/app.ts` manually wires concrete dependencies so the flow remains visible.
 
-The original global `hooks/`, `services/`, `types/`, and `utils/` buckets should not be default dumping grounds. Keep feature-specific code in its feature. Add a shared item only after two real consumers need it.
+Global `hooks/`, `services/`, `types/`, and `utils/` buckets should not become default dumping grounds. Keep feature-specific code in its feature. Add a shared item only after two real consumers need it.
 
 ## Frontend architecture
 
@@ -135,7 +135,7 @@ Space resources inherit the space authorization boundary. Connection requests ar
 
 ## Proposed data model
 
-IDs should be UUID/ULID-style stable identifiers; timestamps are stored in UTC. The table list is a logical model, not a demand to implement everything in Phase 1.
+IDs should be UUID/ULID-style stable identifiers; timestamps are stored in UTC. The table list is a logical model; future entities are introduced only in the phase that implements their domain.
 
 | Entity | Key fields and relationships | Purpose |
 |---|---|---|
@@ -168,7 +168,7 @@ IDs should be UUID/ULID-style stable identifiers; timestamps are stored in UTC. 
 - A chunk cannot exist without a document; an embedding cannot exist without its chunk.
 - A citation references the exact persisted chunk and locator used for the answer/run.
 - A document becomes `ready` only after parsing, chunk persistence, and all required embeddings commit successfully.
-- Deleting a document removes or invalidates its chunks, embeddings, knowledge-base links, and future retrieval eligibility in one controlled workflow. Historical citations retain safe provenance metadata or are marked source-deleted according to the chosen retention policy.
+- Deleting a document removes or invalidates its chunks, embeddings, knowledge-base links, and future retrieval eligibility in one controlled workflow. Historical citations retain safe source metadata or are marked source-deleted according to the chosen retention policy.
 - Reindex creates a new job and atomically replaces the active chunk/embedding version after success. A failed reindex leaves the last good index available.
 - External paper results are cached only from real successful responses and retain source/version metadata.
 
@@ -208,7 +208,7 @@ File upload accepts only PDF, Markdown, and TXT in the initial release. Enforce 
 
 WebSocket handles low-latency collaboration events: space subscribe/unsubscribe, message send/delivery, presence snapshots/deltas, and durable job/task status notifications. REST remains the recovery/read path after reconnect.
 
-Do not keep SSE in the first implementation; the legacy client did not use it and WebSocket already covers bidirectional collaboration.
+Do not add SSE while WebSocket already covers bidirectional collaboration and REST provides durable recovery reads.
 
 ### Event envelope
 
@@ -264,7 +264,7 @@ Upload
 - **Indexing failure:** persist stage and safe error code; document status becomes `failed`, with retry. Partial new chunks are not made active.
 - **No retrieval result:** return a successful query record with `answerStatus: no_evidence`, no invented answer, and suggestions to change scope/query.
 - **Provider failure:** mark query failed/retryable; do not return a canned “grounded” answer.
-- **Document deletion:** remove retrieval eligibility immediately, cancel queued jobs, delete file/index data according to retention policy, and mark historical provenance clearly.
+- **Document deletion:** remove retrieval eligibility immediately, cancel queued jobs, delete file/index data according to retention policy, and mark historical source state clearly.
 - **Reindex:** write a new version, then atomically switch active version. Failure retains the last good version.
 
 ## Agent boundary and execution
@@ -326,7 +326,7 @@ The Execution Trace stores operational evidence: selected tool, validated/redact
 
 ## Technology and dependency recommendations
 
-Continue React, TypeScript, Vite, Express, and `ws`. They match the legacy team's knowledge, the product's needs, and a 15–20 minute interview explanation. The Greenfield value comes from clean boundaries and real behavior, not a framework switch.
+Continue React, TypeScript, Vite, Express, and `ws`. They match the current codebase, the product's needs, and an architecture that can be explained clearly. The value comes from clean boundaries and real behavior, not unnecessary framework changes.
 
 Recommended additions when their phase begins:
 

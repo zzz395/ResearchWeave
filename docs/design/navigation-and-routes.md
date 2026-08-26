@@ -222,7 +222,7 @@ Headers do not contain decorative metrics, universal search, fake online state, 
 
 - Routes use lowercase plural resource nouns and hyphens only when necessary.
 - UI labels use `Research Spaces`, `Knowledge Bases`, `Saved Papers`, `Agent Tasks`, and `Execution Trace`.
-- Do not use legacy terms such as server IP, room password, hotbar, vault, workbench, pipeline, player, chunk, Redstone, or command teleport.
+- Use ResearchWeave domain language; do not introduce unrelated server, game, or terminal terms such as server IP, room password, hotbar, player, Redstone, or command teleport.
 - Use `Chat` only within a Research Space. Use `Activity` for durable events and `Execution Trace` for agent operational steps.
 - Use `Settings` for profile and harmless preferences; provider configuration remains server-only.
 

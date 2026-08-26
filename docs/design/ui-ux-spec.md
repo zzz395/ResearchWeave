@@ -14,7 +14,7 @@ Read this document together with:
 
 ResearchWeave should feel like a calm, precise research ledger: a durable place where people can move from a question to sources, collaboration, observable work, and a defensible result. It combines the order of a technical workspace with restrained editorial cues from academic publishing.
 
-The memorable product signature is **visible provenance**. Source type, evidence scope, processing state, and operational status are placed close to the content they qualify. Thin rules, compact metadata, deliberate typography, and a restrained academic-blue accent reinforce this without imitating a paper document or terminal.
+The memorable product signature is **visible source traceability**. Source type, evidence scope, processing state, and operational status are placed close to the content they qualify. Thin rules, compact metadata, deliberate typography, and a restrained academic-blue accent reinforce this without imitating a paper document or terminal.
 
 The interface should be:
 
@@ -24,7 +24,7 @@ The interface should be:
 - AI-native because AI work is inspectable, not because the UI uses decorative AI motifs;
 - credible during empty, partial, failed, and disconnected states.
 
-It must not use Minecraft terminology or visuals, pixel art, HUDs, fake terminals, neon/cyberpunk effects, large decorative gradients, excessive glass effects, game achievements, or fabricated dashboards. Phase 1's editorial Foundation page is a useful provenance signal, but the authenticated application must be denser and more utilitarian than that introductory screen.
+It must not use Minecraft terminology or visuals, pixel art, HUDs, fake terminals, neon/cyberpunk effects, large decorative gradients, excessive glass effects, game achievements, or fabricated dashboards. The authenticated application should remain dense, calm, and utilitarian.
 
 ## Experience principles
 

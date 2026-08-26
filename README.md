@@ -120,10 +120,8 @@ All runtime configuration is validated centrally on startup. `.env` is ignored b
 
 ## Architecture documentation
 
-- [Legacy audit](docs/architecture/legacy-audit.md)
 - [Product architecture](docs/architecture/product-architecture.md)
 - [Technical architecture](docs/architecture/technical-architecture.md)
-- [Migration map](docs/architecture/migration-map.md)
 - [Implementation roadmap](docs/architecture/implementation-roadmap.md)
 
 ## Design documentation
@@ -132,13 +130,3 @@ All runtime configuration is validated centrally on startup. `.env` is ignored b
 - [Design system](docs/design/design-system.md)
 - [Navigation and routes](docs/design/navigation-and-routes.md)
 - [Screen specifications](docs/design/screen-specifications.md)
-
-## Project origin
-
-**Original Team Project:**
-
-[CommandBlock-Nexus](https://github.com/HereWeThink/CommandBlock-Nexus)
-
-ResearchWeave is an independent post-project redesign and extension of the original team project. It is a new product architecture rather than a rename, visual reskin, or mechanical refactor. Future implementation may selectively adapt useful ideas or code from CommandBlock-Nexus—such as room-based real-time communication, API integration patterns, or arXiv metadata parsing—only after security, correctness, licensing, and architectural review.
-
-Accordingly, ResearchWeave should not be described as “built completely from scratch” if any legacy implementation is later reused. Its accurate provenance is: an independent redesign and extension informed by the original team project, with selective reuse decisions documented in this repository.

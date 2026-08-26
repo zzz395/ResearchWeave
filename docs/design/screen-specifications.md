@@ -4,7 +4,7 @@
 
 This document defines future screen behavior at implementation-ready detail without implementing any screen. Routes follow [Navigation and routes](navigation-and-routes.md); layout, state, and accessibility rules follow the [UI/UX specification](ui-ux-spec.md); visual values and primitives follow the [Design system](design-system.md).
 
-All business data described below is future data. The current Foundation has no users, spaces, members, activity, documents, papers, knowledge bases, or agents. A field may be displayed only after its API contract supplies a real value. “Not available yet” is preferable to an invented count, timestamp, progress value, status, or result.
+Authentication, Research Spaces, Connections, Members, and Chat use real Phase 4 data. Later screens described below may display a field only after its API contract supplies a real value. “Not available yet” is preferable to an invented count, timestamp, progress value, status, or result.
 
 ## Delivery priority
 
@@ -230,7 +230,7 @@ Every displayed citation must correspond to an authorized chunk actually supplie
 | Error state | arXiv/upstream failure is an error with Retry and no fallback papers. Rate limit/timeout messages are distinct when server provides safe codes. |
 | Responsive behavior | Results become single-column reading rows. Compare selection uses a non-obscuring sticky action bar only after selection. |
 
-Search never displays fabricated papers, cached records without source provenance, or automatic “AI summaries” before the user requests one.
+Search never displays fabricated papers, cached records without verifiable source metadata, or automatic “AI summaries” before the user requests one.
 
 ## 12. Paper Detail
 
@@ -238,10 +238,10 @@ Search never displays fabricated papers, cached records without source provenanc
 
 | Requirement | Specification |
 |---|---|
-| Purpose | Inspect real paper metadata/abstract, provenance, saved/import state, and permitted evidence-scoped actions. |
+| Purpose | Inspect real paper metadata/abstract, source attribution, saved/import state, and permitted evidence-scoped actions. |
 | Primary action | Context-dependent `Save to space`; after saved, `Import PDF to knowledge` only when the real workflow exists. |
 | Secondary actions | Open canonical arXiv/PDF link, request Abstract-based Summary, add to comparison. |
-| Information hierarchy | Research breadcrumb → title → authors and canonical identifiers/dates → provenance/source links → action/status row → abstract → explicitly labelled summary if requested. |
+| Information hierarchy | Research breadcrumb → title → authors and canonical identifiers/dates → source attribution and links → action/status row → abstract → explicitly labelled summary if requested. |
 | Main components | PageHeader, metadata definition list, Source links, EvidenceScopeBadge, reading typography, status Alerts, Dialog for space/base selection. |
 | Empty state | Missing optional metadata is labelled unavailable. Summary area is absent until requested; it is not filled with placeholder prose. |
 | Loading state | Title/metadata skeleton. Summary action shows real pending state separately from page loading. |
