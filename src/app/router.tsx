@@ -24,6 +24,11 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
+          { path: "/research", lazy: () => import("../features/research/pages/research-page") },
+          {
+            path: "/research/papers/:paperId",
+            lazy: () => import("../features/research/pages/research-paper-page"),
+          },
           { path: "/spaces", lazy: () => import("../features/spaces/pages/spaces-page") },
           { path: "/spaces/new", lazy: () => import("../features/spaces/pages/new-space-page") },
           {
@@ -32,6 +37,10 @@ export const router = createBrowserRouter([
             children: [
               { index: true, lazy: () => import("../features/spaces/pages/space-detail-page") },
               { path: "chat", lazy: () => import("../features/chat/pages/space-chat-page") },
+              {
+                path: "saved-papers",
+                lazy: () => import("../features/research/pages/saved-papers-page"),
+              },
               { path: "members", lazy: () => import("../features/members/pages/space-members-page") },
               { path: "settings", lazy: () => import("../features/spaces/pages/space-settings-page") },
             ],
