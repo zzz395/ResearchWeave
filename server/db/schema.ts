@@ -206,6 +206,33 @@ export const savedPapers = pgTable(
   ],
 );
 
+export const paperSummaries = pgTable(
+  "paper_summaries",
+  {
+    paperId: uuid("paper_id")
+      .primaryKey()
+      .references(() => papers.id, { onDelete: "cascade" }),
+    overview: text("overview").notNull(),
+    keyContributions: text("key_contributions").array().notNull(),
+    methodHighlights: text("method_highlights").array().notNull(),
+    findings: text("findings").array().notNull(),
+    caveats: text("caveats").array().notNull(),
+    sourceFingerprint: varchar("source_fingerprint", { length: 64 }).notNull(),
+    sourceVersion: integer("source_version").notNull(),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true, mode: "date" }).notNull(),
+    model: text("model").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    check(
+      "paper_summaries_source_fingerprint_sha256",
+      sql`${table.sourceFingerprint} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check("paper_summaries_source_version_positive", sql`${table.sourceVersion} >= 1`),
+  ],
+);
+
 export type UserRecord = typeof users.$inferSelect;
 export type SessionRecord = typeof sessions.$inferSelect;
 export type ResearchSpaceRecord = typeof researchSpaces.$inferSelect;
@@ -214,3 +241,4 @@ export type ConnectionRecord = typeof connections.$inferSelect;
 export type ChatMessageRecord = typeof chatMessages.$inferSelect;
 export type PaperRecord = typeof papers.$inferSelect;
 export type SavedPaperRecord = typeof savedPapers.$inferSelect;
+export type PaperSummaryRecord = typeof paperSummaries.$inferSelect;

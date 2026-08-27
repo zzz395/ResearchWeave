@@ -47,3 +47,44 @@ export function getResearchError(error: unknown) {
       };
   }
 }
+
+export function getSummaryError(error: unknown) {
+  if (!(error instanceof ApiClientError)) {
+    return {
+      title: "Summary could not be loaded",
+      message: "Please try again.",
+      requestId: undefined,
+    };
+  }
+
+  const messages: Record<string, { title: string; message: string }> = {
+    summary_unavailable: {
+      title: "Summary generation is unavailable",
+      message: "Summary generation is currently unavailable.",
+    },
+    summary_upstream_timeout: {
+      title: "Summary generation timed out",
+      message: "Summary generation timed out. Please try again.",
+    },
+    summary_upstream_failure: {
+      title: "Summary generation failed",
+      message: "Summary generation failed upstream. Please try again.",
+    },
+    summary_invalid_response: {
+      title: "Summary could not be validated",
+      message: "The generated summary could not be validated. Please try again.",
+    },
+    summary_source_changed: {
+      title: "The paper changed",
+      message: "The paper changed while the summary was being generated. Please try again.",
+    },
+  };
+  const mapped = messages[error.code];
+  return {
+    ...(mapped ?? {
+      title: error.status === 404 ? "Paper not found" : "Summary could not be loaded",
+      message: error.message,
+    }),
+    requestId: error.requestId,
+  };
+}

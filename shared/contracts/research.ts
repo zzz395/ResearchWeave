@@ -65,6 +65,35 @@ export const savedPaperListResponseSchema = z.object({
   savedPapers: z.array(savedPaperSchema),
 });
 
+const summaryListItemSchema = z.string().trim().min(1).max(1000);
+
+export const researchSummaryContentSchema = z
+  .object({
+    overview: z.string().trim().min(1).max(2000),
+    keyContributions: z.array(summaryListItemSchema).max(5),
+    methodHighlights: z.array(summaryListItemSchema).max(5),
+    findings: z.array(summaryListItemSchema).max(5),
+    caveats: z.array(summaryListItemSchema).max(5),
+  })
+  .strict();
+
+export const researchPaperSummarySchema = researchSummaryContentSchema.extend({
+  paperId: z.string().uuid(),
+  sourceVersion: z.number().int().positive(),
+  sourceUpdatedAt: z.string().datetime(),
+  model: z.string().trim().min(1),
+  promptVersion: z.string().trim().min(1),
+  generatedAt: z.string().datetime(),
+});
+
+export const researchPaperSummaryResponseSchema = z.object({
+  summary: researchPaperSummarySchema,
+});
+
+export const nullableResearchPaperSummaryResponseSchema = z.object({
+  summary: researchPaperSummarySchema.nullable(),
+});
+
 export const savedPaperResponseSchema = z.object({
   savedPaper: savedPaperSchema,
 });
@@ -77,3 +106,5 @@ export type PersistentResearchPaperSearchResult = z.infer<
   typeof persistentResearchPaperSearchResultSchema
 >;
 export type SavedPaper = z.infer<typeof savedPaperSchema>;
+export type ResearchSummaryContent = z.infer<typeof researchSummaryContentSchema>;
+export type ResearchPaperSummary = z.infer<typeof researchPaperSummarySchema>;

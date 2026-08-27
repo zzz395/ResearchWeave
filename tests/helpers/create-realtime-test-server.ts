@@ -18,6 +18,7 @@ import {
   InMemoryConnectionRepository,
   InMemoryMemberRepository,
   InMemoryPaperRepository,
+  InMemoryPaperSummaryRepository,
   InMemorySavedPaperRepository,
   InMemorySpaceRepository,
 } from "./in-memory-repositories";
@@ -46,6 +47,7 @@ export async function createRealtimeTestServer() {
     paperRepository,
     spaceRepository,
   );
+  const summaryRepository = new InMemoryPaperSummaryRepository(paperRepository);
   const hub = new RealtimeHub();
   const authService = createAuthService(authRepository, {
     sessionEnded: (tokenHash) => hub.closeSession(tokenHash),
@@ -74,10 +76,15 @@ export async function createRealtimeTestServer() {
     { memberRemoved: (spaceId, userId) => hub.revokeMember(spaceId, userId) },
   );
   const chatService = createChatService(chatRepository, spaceRepository);
-  const researchService = createResearchService(paperRepository, savedPaperRepository, {
-    search: () =>
-      Promise.resolve({ totalResults: 0, startIndex: 0, itemsPerPage: 0, papers: [] }),
-  });
+  const researchService = createResearchService(
+    paperRepository,
+    savedPaperRepository,
+    {
+      search: () =>
+        Promise.resolve({ totalResults: 0, startIndex: 0, itemsPerPage: 0, papers: [] }),
+    },
+    summaryRepository,
+  );
   const logger = pino({ level: "silent" });
   const app = createApp({
     environment: testEnvironment,

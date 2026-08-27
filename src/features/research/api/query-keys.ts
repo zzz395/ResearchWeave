@@ -7,6 +7,9 @@ export const researchQueryKeys = {
   paper(paperId: string) {
     return ["research", "paper", paperId] as const;
   },
+  summary(paperId: string) {
+    return ["research", "paper", paperId, "summary"] as const;
+  },
   savedPapers(spaceId: string) {
     return ["spaces", spaceId, "saved-papers"] as const;
   },

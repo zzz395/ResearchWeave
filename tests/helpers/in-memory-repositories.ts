@@ -3,6 +3,7 @@ import type {
   ChatMessageRecord,
   ConnectionRecord,
   PaperRecord,
+  PaperSummaryRecord,
   ResearchSpaceRecord,
   SavedPaperRecord,
   SessionRecord,
@@ -46,6 +47,14 @@ import type {
   SavedPaperRepository,
   SavePaperResult,
 } from "../../server/modules/research/saved-paper-repository";
+import type {
+  PaperSummaryRepository,
+  PersistSummaryResult,
+} from "../../server/modules/research/summary-repository";
+import {
+  createSummarySourceFingerprint,
+  toPaperSummarySource,
+} from "../../server/modules/research/summary-fingerprint";
 
 export class InMemoryAuthRepository implements AuthRepository {
   readonly users = new Map<string, UserRecord>();
@@ -371,6 +380,27 @@ export class InMemoryPaperRepository implements PaperRepository {
 
   findById(paperId: string) {
     return Promise.resolve(this.papers.get(paperId) ?? null);
+  }
+}
+
+export class InMemoryPaperSummaryRepository implements PaperSummaryRepository {
+  readonly summaries = new Map<string, PaperSummaryRecord>();
+
+  constructor(private readonly papers: InMemoryPaperRepository) {}
+
+  findByPaperId(paperId: string) {
+    return Promise.resolve(this.summaries.get(paperId) ?? null);
+  }
+
+  persistIfSourceCurrent(record: PaperSummaryRecord): Promise<PersistSummaryResult> {
+    const paper = this.papers.papers.get(record.paperId);
+    if (!paper) return Promise.resolve({ status: "paper_not_found" });
+    const fingerprint = createSummarySourceFingerprint(toPaperSummarySource(paper));
+    if (fingerprint !== record.sourceFingerprint) {
+      return Promise.resolve({ status: "source_changed" });
+    }
+    this.summaries.set(record.paperId, record);
+    return Promise.resolve({ status: "persisted", record });
   }
 }
 

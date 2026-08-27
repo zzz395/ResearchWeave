@@ -3,11 +3,14 @@ import { z } from "zod";
 import {
   persistentResearchPaperResponseSchema,
   persistentResearchPaperSearchResultSchema,
+  nullableResearchPaperSummaryResponseSchema,
+  researchPaperSummaryResponseSchema,
   savedPaperListResponseSchema,
   savedPaperResponseSchema,
   type PersistentResearchPaper,
   type PersistentResearchPaperSearchResult,
   type ResearchSearchQuery,
+  type ResearchPaperSummary,
   type SavedPaper,
 } from "../../../../shared/contracts/research";
 import { apiRequest } from "../../../services/api/client";
@@ -34,6 +37,33 @@ export async function getResearchPaper(paperId: string): Promise<PersistentResea
       persistentResearchPaperResponseSchema,
     )
   ).paper;
+}
+
+export async function getResearchPaperSummary(
+  paperId: string,
+): Promise<ResearchPaperSummary | null> {
+  return (
+    await apiRequest(
+      `/api/v1/research/papers/${paperId}/summary`,
+      nullableResearchPaperSummaryResponseSchema,
+    )
+  ).summary;
+}
+
+export async function ensureResearchPaperSummary(
+  paperId: string,
+): Promise<ResearchPaperSummary> {
+  return (
+    await apiRequest(
+      `/api/v1/research/papers/${paperId}/summary`,
+      researchPaperSummaryResponseSchema,
+      {
+        method: "PUT",
+        body: JSON.stringify({}),
+        acceptedStatuses: [200, 201],
+      },
+    )
+  ).summary;
 }
 
 export async function listSavedPapers(spaceId: string): Promise<SavedPaper[]> {

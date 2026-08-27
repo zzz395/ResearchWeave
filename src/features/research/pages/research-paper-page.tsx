@@ -11,6 +11,7 @@ import { researchQueryKeys } from "../api/query-keys";
 import { getResearchPaper } from "../api/research";
 import { AuthorLine, CategoryList, ExternalPaperLink } from "../components/paper-presentation";
 import { SavePaperDialog } from "../components/save-paper-dialog";
+import { PaperAiSummary } from "../components/paper-ai-summary";
 import { getResearchError } from "../research-errors";
 
 interface ResearchLocationState {
@@ -93,6 +94,7 @@ export function Component() {
             </dl>
           </aside>
         </div>
+        <PaperAiSummary paperId={paper.id} />
       </article>
     </ContentSection>
   );

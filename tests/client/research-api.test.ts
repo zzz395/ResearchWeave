@@ -3,10 +3,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ensureResearchPaperSummary,
+  getResearchPaperSummary,
   removeSavedPaper,
   savePaperToSpace,
   searchResearchPapers,
 } from "../../src/features/research/api/research";
+import { researchQueryKeys } from "../../src/features/research/api/query-keys";
 
 const paper = {
   id: "10000000-0000-4000-8000-000000000001",
@@ -28,6 +31,19 @@ const savedPaper = {
   paper,
   savedByUserId: "20000000-0000-4000-8000-000000000002",
   savedAt: "2026-01-04T00:00:00.000Z",
+};
+const summary = {
+  paperId: paper.id,
+  overview: "A grounded overview.",
+  keyContributions: ["A supported contribution."],
+  methodHighlights: [],
+  findings: [],
+  caveats: [],
+  sourceVersion: 2,
+  sourceUpdatedAt: paper.updatedAt,
+  model: "test-model",
+  promptVersion: "abstract-summary-v1",
+  generatedAt: "2026-01-04T00:00:00.000Z",
 };
 
 afterEach(() => {
@@ -76,5 +92,42 @@ describe("research API requests", () => {
     await expect(removeSavedPaper("space-1", paper.id)).resolves.toBeUndefined();
     expect(fetchMock.mock.calls[0]?.[0]).toBe(`/api/v1/spaces/space-1/saved-papers/${paper.id}`);
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "DELETE" });
+  });
+
+  it("GETs the nullable paper summary contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ summary: null }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getResearchPaperSummary(paper.id)).resolves.toBeNull();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`/api/v1/research/papers/${paper.id}/summary`);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: "include" });
+  });
+
+  it.each([200, 201])("accepts a %i summary response and sends exactly an empty object", async (status) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ summary }),
+      { status, headers: { "Content-Type": "application/json" } },
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(ensureResearchPaperSummary(paper.id)).resolves.toEqual(summary);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`/api/v1/research/papers/${paper.id}/summary`);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "PUT",
+      body: "{}",
+      credentials: "include",
+    });
+  });
+
+  it("uses a paper-scoped summary query key", () => {
+    expect(researchQueryKeys.summary(paper.id)).toEqual([
+      "research",
+      "paper",
+      paper.id,
+      "summary",
+    ]);
   });
 });

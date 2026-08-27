@@ -7,6 +7,7 @@ import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
 import { createMemberService } from "../../server/modules/members/service";
 import type { ArxivClient } from "../../server/integrations/arxiv/client";
+import type { ResearchSummaryGenerator } from "../../server/integrations/research-summary/generator";
 import { createResearchService } from "../../server/modules/research/service";
 import { createSpaceService } from "../../server/modules/spaces/service";
 import {
@@ -15,6 +16,7 @@ import {
   InMemoryConnectionRepository,
   InMemoryMemberRepository,
   InMemoryPaperRepository,
+  InMemoryPaperSummaryRepository,
   InMemorySavedPaperRepository,
   InMemorySpaceRepository,
 } from "./in-memory-repositories";
@@ -41,6 +43,7 @@ const emptyArxivClient: Pick<ArxivClient, "search"> = {
 export function createTestApp(
   checkDatabase: () => Promise<void> = () => Promise.resolve(),
   arxivClient: Pick<ArxivClient, "search"> = emptyArxivClient,
+  summaryGenerator?: ResearchSummaryGenerator,
 ) {
   const authRepository = new InMemoryAuthRepository();
   const spaceRepository = new InMemorySpaceRepository();
@@ -52,6 +55,7 @@ export function createTestApp(
     paperRepository,
     spaceRepository,
   );
+  const summaryRepository = new InMemoryPaperSummaryRepository(paperRepository);
   const authService = createAuthService(authRepository);
   const spaceService = createSpaceService(spaceRepository);
   const connectionService = createConnectionService(connectionRepository);
@@ -61,6 +65,8 @@ export function createTestApp(
     paperRepository,
     savedPaperRepository,
     arxivClient,
+    summaryRepository,
+    summaryGenerator,
   );
   const app = createApp({
     environment: testEnvironment,
@@ -83,6 +89,7 @@ export function createTestApp(
     chatRepository,
     paperRepository,
     savedPaperRepository,
+    summaryRepository,
     authService,
     spaceService,
     chatService,

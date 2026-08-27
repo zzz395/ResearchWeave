@@ -4,6 +4,8 @@ import { z } from "zod";
 import {
   persistentResearchPaperResponseSchema,
   persistentResearchPaperSearchResultSchema,
+  nullableResearchPaperSummaryResponseSchema,
+  researchPaperSummaryResponseSchema,
   researchSearchQuerySchema,
   savedPaperListResponseSchema,
   savedPaperResponseSchema,
@@ -32,6 +34,21 @@ export function createResearchRouter(service: ResearchService) {
     const { paperId } = paperParamsSchema.parse(request.params);
     const paper = await service.getPaper(paperId);
     response.status(200).json(persistentResearchPaperResponseSchema.parse({ paper }));
+  });
+
+  router.get("/papers/:paperId/summary", async (request, response) => {
+    const { paperId } = paperParamsSchema.parse(request.params);
+    const summary = await service.getPaperSummary(paperId);
+    response.status(200).json(nullableResearchPaperSummaryResponseSchema.parse({ summary }));
+  });
+
+  router.put("/papers/:paperId/summary", async (request, response) => {
+    const { paperId } = paperParamsSchema.parse(request.params);
+    emptyBodySchema.parse(request.body ?? {});
+    const result = await service.ensurePaperSummary(paperId);
+    response
+      .status(result.created ? 201 : 200)
+      .json(researchPaperSummaryResponseSchema.parse({ summary: result.summary }));
   });
 
   return router;

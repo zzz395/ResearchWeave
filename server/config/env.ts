@@ -14,6 +14,9 @@ const environmentSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
+  LLM_BASE_URL: z.string().url().optional(),
+  LLM_API_KEY: z.string().trim().min(1).optional(),
+  LLM_MODEL: z.string().trim().min(1).optional(),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;
