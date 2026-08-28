@@ -7,6 +7,7 @@ import { createAuthService } from "../../server/modules/auth/service";
 import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
 import { createMemberService } from "../../server/modules/members/service";
+import { createResearchService } from "../../server/modules/research/service";
 import { createSpaceService, type SpaceService } from "../../server/modules/spaces/service";
 import { attachRealtimeGateway } from "../../server/realtime/gateway";
 import { RealtimeHub } from "../../server/realtime/hub";
@@ -16,6 +17,9 @@ import {
   InMemoryChatRepository,
   InMemoryConnectionRepository,
   InMemoryMemberRepository,
+  InMemoryPaperRepository,
+  InMemoryPaperSummaryRepository,
+  InMemorySavedPaperRepository,
   InMemorySpaceRepository,
 } from "./in-memory-repositories";
 
@@ -38,6 +42,12 @@ export async function createRealtimeTestServer() {
   const connectionRepository = new InMemoryConnectionRepository(authRepository);
   const memberRepository = new InMemoryMemberRepository(authRepository, spaceRepository);
   const chatRepository = new InMemoryChatRepository(authRepository);
+  const paperRepository = new InMemoryPaperRepository();
+  const savedPaperRepository = new InMemorySavedPaperRepository(
+    paperRepository,
+    spaceRepository,
+  );
+  const summaryRepository = new InMemoryPaperSummaryRepository(paperRepository);
   const hub = new RealtimeHub();
   const authService = createAuthService(authRepository, {
     sessionEnded: (tokenHash) => hub.closeSession(tokenHash),
@@ -66,6 +76,15 @@ export async function createRealtimeTestServer() {
     { memberRemoved: (spaceId, userId) => hub.revokeMember(spaceId, userId) },
   );
   const chatService = createChatService(chatRepository, spaceRepository);
+  const researchService = createResearchService(
+    paperRepository,
+    savedPaperRepository,
+    {
+      search: () =>
+        Promise.resolve({ totalResults: 0, startIndex: 0, itemsPerPage: 0, papers: [] }),
+    },
+    summaryRepository,
+  );
   const logger = pino({ level: "silent" });
   const app = createApp({
     environment: testEnvironment,
@@ -76,6 +95,7 @@ export async function createRealtimeTestServer() {
     connectionService,
     memberService,
     chatService,
+    researchService,
   });
   const server = createServer(app);
   const gateway = attachRealtimeGateway({

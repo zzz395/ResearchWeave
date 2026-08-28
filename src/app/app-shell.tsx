@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, Library, LogOut, Menu, UsersRound, X } from "lucide-react";
+import { BookOpen, ChevronDown, Library, LogOut, Menu, UsersRound, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
@@ -72,6 +72,15 @@ function PrimaryNavigation({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav aria-label="Primary navigation" className="rw-primary-nav">
       <p>Collaborate</p>
+      <NavLink
+        className={({ isActive }) => (isActive ? "is-active" : "")}
+        onClick={onNavigate}
+        title="Research"
+        to="/research"
+      >
+        <BookOpen aria-hidden="true" size={19} />
+        <span>Research</span>
+      </NavLink>
       <NavLink
         className={({ isActive }) => (isActive ? "is-active" : "")}
         onClick={onNavigate}

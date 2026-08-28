@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <opensearch:totalResults>2</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <opensearch:itemsPerPage>2</opensearch:itemsPerPage>
+  <entry>
+    <id>http://arxiv.org/abs/hep-ex/0307015</id>
+    <updated>2004-02-01T00:00:00Z</updated>
+    <published>2003-07-01T00:00:00Z</published>
+    <title>Legacy physics identifier</title>
+    <summary>Legacy abstract.</summary>
+    <author><name>Legacy Author</name></author>
+    <category term="hep-ex" scheme="http://arxiv.org/schemas/atom" />
+    <arxiv:primary_category term="hep-ex" scheme="http://arxiv.org/schemas/atom" />
+    <link href="http://arxiv.org/abs/hep-ex/0307015v2" rel="alternate" type="text/html" />
+    <link href="http://arxiv.org/pdf/hep-ex/0307015v2" rel="related" type="application/pdf" title="pdf" />
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/math.GT/0309136</id>
+    <updated>2003-09-20T00:00:00Z</updated>
+    <published>2003-09-15T00:00:00Z</published>
+    <title>Legacy mathematics identifier</title>
+    <summary>Another legacy abstract.</summary>
+    <author><name>Another Author</name></author>
+    <category term="math.GT" scheme="http://arxiv.org/schemas/atom" />
+    <arxiv:primary_category term="math.GT" scheme="http://arxiv.org/schemas/atom" />
+    <link href="http://arxiv.org/abs/math.GT/0309136v1" rel="alternate" type="text/html" />
+    <link href="http://arxiv.org/pdf/math.GT/0309136v1" rel="related" type="application/pdf" title="pdf" />
+  </entry>
+</feed>

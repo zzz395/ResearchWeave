@@ -2,7 +2,10 @@ import type { SpaceRole } from "../../shared/contracts/spaces";
 import type {
   ChatMessageRecord,
   ConnectionRecord,
+  PaperRecord,
+  PaperSummaryRecord,
   ResearchSpaceRecord,
+  SavedPaperRecord,
   SessionRecord,
   SpaceMemberRecord,
   UserRecord,
@@ -33,6 +36,25 @@ import type {
   ChatRepository,
   NewChatMessageRecord,
 } from "../../server/modules/chat/repository";
+import {
+  shouldRefreshPaper,
+  type NewPaperRecord,
+  type PaperRepository,
+} from "../../server/modules/research/paper-repository";
+import type {
+  RemoveSavedPaperResult,
+  SavedPaperListResult,
+  SavedPaperRepository,
+  SavePaperResult,
+} from "../../server/modules/research/saved-paper-repository";
+import type {
+  PaperSummaryRepository,
+  PersistSummaryResult,
+} from "../../server/modules/research/summary-repository";
+import {
+  createSummarySourceFingerprint,
+  toPaperSummarySource,
+} from "../../server/modules/research/summary-fingerprint";
 
 export class InMemoryAuthRepository implements AuthRepository {
   readonly users = new Map<string, UserRecord>();
@@ -319,5 +341,138 @@ export class InMemoryChatRepository implements ChatRepository {
         return sender ? [{ ...message, sender }] : [];
       });
     return Promise.resolve(records);
+  }
+}
+
+export class InMemoryPaperRepository implements PaperRepository {
+  readonly papers = new Map<string, PaperRecord>();
+  readonly canonicalIds = new Map<string, string>();
+  failNextUpsert = false;
+
+  upsertMany(records: NewPaperRecord[]) {
+    if (this.failNextUpsert) {
+      this.failNextUpsert = false;
+      return Promise.reject(new Error("simulated paper persistence failure"));
+    }
+
+    const nextPapers = new Map(this.papers);
+    const nextCanonicalIds = new Map(this.canonicalIds);
+    const persisted = records.map((incoming) => {
+      const existingId = nextCanonicalIds.get(incoming.canonicalArxivId);
+      const existing = existingId ? nextPapers.get(existingId) : undefined;
+      if (!existing) {
+        nextPapers.set(incoming.id, incoming);
+        nextCanonicalIds.set(incoming.canonicalArxivId, incoming.id);
+        return incoming;
+      }
+      if (!shouldRefreshPaper(incoming, existing)) return existing;
+      const updated = { ...incoming, id: existing.id };
+      nextPapers.set(existing.id, updated);
+      return updated;
+    });
+
+    this.papers.clear();
+    this.canonicalIds.clear();
+    for (const [id, paper] of nextPapers) this.papers.set(id, paper);
+    for (const [canonicalId, id] of nextCanonicalIds) this.canonicalIds.set(canonicalId, id);
+    return Promise.resolve(persisted);
+  }
+
+  findById(paperId: string) {
+    return Promise.resolve(this.papers.get(paperId) ?? null);
+  }
+}
+
+export class InMemoryPaperSummaryRepository implements PaperSummaryRepository {
+  readonly summaries = new Map<string, PaperSummaryRecord>();
+
+  constructor(private readonly papers: InMemoryPaperRepository) {}
+
+  findByPaperId(paperId: string) {
+    return Promise.resolve(this.summaries.get(paperId) ?? null);
+  }
+
+  persistIfSourceCurrent(record: PaperSummaryRecord): Promise<PersistSummaryResult> {
+    const paper = this.papers.papers.get(record.paperId);
+    if (!paper) return Promise.resolve({ status: "paper_not_found" });
+    const fingerprint = createSummarySourceFingerprint(toPaperSummarySource(paper));
+    if (fingerprint !== record.sourceFingerprint) {
+      return Promise.resolve({ status: "source_changed" });
+    }
+    this.summaries.set(record.paperId, record);
+    return Promise.resolve({ status: "persisted", record });
+  }
+}
+
+export class InMemorySavedPaperRepository implements SavedPaperRepository {
+  readonly savedPapers = new Map<string, SavedPaperRecord>();
+
+  constructor(
+    private readonly papers: InMemoryPaperRepository,
+    private readonly spaces: InMemorySpaceRepository,
+  ) {}
+
+  private key(spaceId: string, paperId: string) {
+    return `${spaceId}:${paperId}`;
+  }
+
+  listForMember(spaceId: string, actorId: string): Promise<SavedPaperListResult> {
+    if (!this.spaces.hasMembership(spaceId, actorId)) {
+      return Promise.resolve({ status: "space_not_found" });
+    }
+    const records = [...this.savedPapers.values()]
+      .filter((record) => record.spaceId === spaceId)
+      .sort((left, right) => {
+        const time = right.savedAt.getTime() - left.savedAt.getTime();
+        return time || right.paperId.localeCompare(left.paperId);
+      })
+      .flatMap((record) => {
+        const paper = this.papers.papers.get(record.paperId);
+        return paper ? [{ ...record, paper }] : [];
+      });
+    return Promise.resolve({ status: "ok", records });
+  }
+
+  saveForMember({
+    spaceId,
+    paperId,
+    actorId,
+    savedAt,
+  }: {
+    spaceId: string;
+    paperId: string;
+    actorId: string;
+    savedAt: Date;
+  }): Promise<SavePaperResult> {
+    if (!this.spaces.hasMembership(spaceId, actorId)) {
+      return Promise.resolve({ status: "space_not_found" });
+    }
+    const paper = this.papers.papers.get(paperId);
+    if (!paper) return Promise.resolve({ status: "paper_not_found" });
+    const key = this.key(spaceId, paperId);
+    const existing = this.savedPapers.get(key);
+    if (existing) {
+      return Promise.resolve({ status: "existing", record: { ...existing, paper } });
+    }
+    const created = { spaceId, paperId, savedByUserId: actorId, savedAt };
+    this.savedPapers.set(key, created);
+    return Promise.resolve({ status: "created", record: { ...created, paper } });
+  }
+
+  removeForMember(
+    spaceId: string,
+    paperId: string,
+    actorId: string,
+  ): Promise<RemoveSavedPaperResult> {
+    const role = this.spaces.memberships.get(`${spaceId}:${actorId}`);
+    if (!role) return Promise.resolve({ status: "space_not_found" });
+    const key = this.key(spaceId, paperId);
+    const savedPaper = this.savedPapers.get(key);
+    if (!savedPaper) return Promise.resolve({ status: "saved_paper_not_found" });
+    if (role !== "owner" && savedPaper.savedByUserId !== actorId) {
+      return Promise.resolve({ status: "forbidden" });
+    }
+    this.savedPapers.delete(key);
+    return Promise.resolve({ status: "removed" });
   }
 }

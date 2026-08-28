@@ -20,6 +20,8 @@ import { createConnectionRouter } from "./modules/connections/routes";
 import type { ConnectionService } from "./modules/connections/service";
 import { createMemberRouter } from "./modules/members/routes";
 import type { MemberService } from "./modules/members/service";
+import { createResearchRouter, createSavedPaperRouter } from "./modules/research/routes";
+import type { ResearchService } from "./modules/research/service";
 import { createSpaceRouter } from "./modules/spaces/routes";
 import type { SpaceService } from "./modules/spaces/service";
 import { createHealthRouter } from "./routes/health";
@@ -34,6 +36,7 @@ export interface AppDependencies {
   connectionService: ConnectionService;
   memberService: MemberService;
   chatService: ChatService;
+  researchService: ResearchService;
 }
 
 export function createApp({
@@ -45,6 +48,7 @@ export function createApp({
   connectionService,
   memberService,
   chatService,
+  researchService,
 }: AppDependencies): Express {
   const app = express();
 
@@ -77,6 +81,12 @@ export function createApp({
     requireAuthentication,
     createChatHistoryRouter(chatService),
   );
+  app.use(
+    "/api/v1/spaces/:spaceId/saved-papers",
+    requireAuthentication,
+    createSavedPaperRouter(researchService),
+  );
+  app.use("/api/v1/research", requireAuthentication, createResearchRouter(researchService));
   app.use("/api/v1/spaces", requireAuthentication, createSpaceRouter(spaceService));
 
   if (environment.NODE_ENV === "production") {
