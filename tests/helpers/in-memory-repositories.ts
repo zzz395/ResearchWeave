@@ -2,6 +2,7 @@ import type { SpaceRole } from "../../shared/contracts/spaces";
 import type {
   ChatMessageRecord,
   ConnectionRecord,
+  DocumentRecord,
   PaperRecord,
   PaperSummaryRecord,
   ResearchSpaceRecord,
@@ -51,6 +52,16 @@ import type {
   PaperSummaryRepository,
   PersistSummaryResult,
 } from "../../server/modules/research/summary-repository";
+import type {
+  CreateDocumentResult,
+  DeleteDocumentResult,
+  DocumentCursorRecord,
+  DocumentDetailResult,
+  DocumentListResult,
+  DocumentRepository,
+  NewDocumentRecord,
+} from "../../server/modules/documents/repository";
+import type { DocumentStorage } from "../../server/integrations/document-storage/storage";
 import {
   createSummarySourceFingerprint,
   toPaperSummarySource,
@@ -474,5 +485,117 @@ export class InMemorySavedPaperRepository implements SavedPaperRepository {
     }
     this.savedPapers.delete(key);
     return Promise.resolve({ status: "removed" });
+  }
+}
+
+export class InMemoryDocumentRepository implements DocumentRepository {
+  readonly documents = new Map<string, DocumentRecord>();
+  failNextCreate = false;
+  beforeNextCreate?: () => void;
+
+  constructor(private readonly spaces: InMemorySpaceRepository) {}
+
+  hasMembership(spaceId: string, actorId: string) {
+    return Promise.resolve(this.spaces.hasMembership(spaceId, actorId));
+  }
+
+  createForMember(record: NewDocumentRecord, actorId: string): Promise<CreateDocumentResult> {
+    this.beforeNextCreate?.();
+    this.beforeNextCreate = undefined;
+    if (!this.spaces.hasMembership(record.spaceId, actorId)) {
+      return Promise.resolve({ status: "space_not_found" });
+    }
+    if (this.failNextCreate) {
+      this.failNextCreate = false;
+      return Promise.reject(new Error("simulated document persistence failure"));
+    }
+    const existing = [...this.documents.values()].find(
+      (item) => item.spaceId === record.spaceId && item.sourceSha256 === record.sourceSha256,
+    );
+    if (existing) return Promise.resolve({ status: "existing", record: existing });
+    this.documents.set(record.id, record);
+    return Promise.resolve({ status: "created", record });
+  }
+
+  listForMember(
+    spaceId: string,
+    actorId: string,
+    cursor: DocumentCursorRecord | null,
+    limit: number,
+  ): Promise<DocumentListResult> {
+    if (!this.spaces.hasMembership(spaceId, actorId)) {
+      return Promise.resolve({ status: "space_not_found" });
+    }
+    const records = [...this.documents.values()]
+      .filter((record) => {
+        if (record.spaceId !== spaceId) return false;
+        if (!cursor) return true;
+        return (
+          record.createdAt < cursor.createdAt ||
+          (record.createdAt.getTime() === cursor.createdAt.getTime() && record.id < cursor.id)
+        );
+      })
+      .sort((left, right) => {
+        const time = right.createdAt.getTime() - left.createdAt.getTime();
+        return time || right.id.localeCompare(left.id);
+      })
+      .slice(0, limit);
+    return Promise.resolve({ status: "ok", records });
+  }
+
+  findForMember(
+    spaceId: string,
+    documentId: string,
+    actorId: string,
+  ): Promise<DocumentDetailResult> {
+    if (!this.spaces.hasMembership(spaceId, actorId)) {
+      return Promise.resolve({ status: "space_not_found" });
+    }
+    const record = this.documents.get(documentId);
+    return Promise.resolve(
+      record?.spaceId === spaceId
+        ? { status: "ok", record }
+        : { status: "document_not_found" },
+    );
+  }
+
+  deleteForMember(
+    spaceId: string,
+    documentId: string,
+    actorId: string,
+  ): Promise<DeleteDocumentResult> {
+    const role = this.spaces.memberships.get(`${spaceId}:${actorId}`);
+    if (!role) return Promise.resolve({ status: "space_not_found" });
+    const record = this.documents.get(documentId);
+    if (!record || record.spaceId !== spaceId) {
+      return Promise.resolve({ status: "document_not_found" });
+    }
+    if (role !== "owner" && record.uploadedByUserId !== actorId) {
+      return Promise.resolve({ status: "forbidden" });
+    }
+    this.documents.delete(documentId);
+    return Promise.resolve({ status: "removed", storageKey: record.storageKey });
+  }
+}
+
+export class InMemoryDocumentStorage implements DocumentStorage {
+  prepareStagingDirectory(): Promise<string> {
+    return Promise.reject(new Error("Document upload storage was not configured for this test."));
+  }
+
+  readStaged(): Promise<Buffer> {
+    return Promise.reject(new Error("Document upload storage was not configured for this test."));
+  }
+
+  promote(): Promise<void> {
+    return Promise.reject(new Error("Document upload storage was not configured for this test."));
+  }
+
+  cleanupStaged(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  delete(): Promise<void> {
+    return Promise.resolve();
   }
 }

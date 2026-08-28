@@ -10,11 +10,20 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  vector,
   varchar,
 } from "drizzle-orm/pg-core";
 
 export const spaceRole = pgEnum("space_role", ["owner", "member"]);
 export const connectionStatus = pgEnum("connection_status", ["pending", "accepted"]);
+export const documentMediaType = pgEnum("document_media_type", ["pdf", "text", "markdown"]);
+export const documentStatus = pgEnum("document_status", [
+  "queued",
+  "processing",
+  "ready",
+  "failed",
+]);
+export const documentStage = pgEnum("document_stage", ["extracting", "chunking", "embedding"]);
 
 export const users = pgTable(
   "users",
@@ -233,6 +242,101 @@ export const paperSummaries = pgTable(
   ],
 );
 
+export const documents = pgTable(
+  "documents",
+  {
+    id: uuid("id").primaryKey(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => researchSpaces.id, { onDelete: "cascade" }),
+    uploadedByUserId: uuid("uploaded_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    originalFilename: varchar("original_filename", { length: 255 }).notNull(),
+    mediaType: documentMediaType("media_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sourceSha256: varchar("source_sha256", { length: 64 }).notNull(),
+    storageKey: text("storage_key").notNull(),
+    status: documentStatus("status").default("queued").notNull(),
+    stage: documentStage("stage"),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true, mode: "date" }),
+    errorCode: text("error_code"),
+    failedAt: timestamp("failed_at", { withTimezone: true, mode: "date" }),
+    pageCount: integer("page_count"),
+    characterCount: integer("character_count"),
+    chunkCount: integer("chunk_count").default(0).notNull(),
+    extractorVersion: text("extractor_version"),
+    chunkerVersion: text("chunker_version"),
+    embeddingModel: text("embedding_model"),
+    embeddingDimensions: integer("embedding_dimensions"),
+    indexFingerprint: varchar("index_fingerprint", { length: 64 }),
+    indexedAt: timestamp("indexed_at", { withTimezone: true, mode: "date" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("documents_space_source_sha256_unique").on(table.spaceId, table.sourceSha256),
+    index("documents_space_created_at_id_index").on(table.spaceId, table.createdAt, table.id),
+    index("documents_uploaded_by_user_id_index").on(table.uploadedByUserId),
+    check("documents_size_bytes_positive", sql`${table.sizeBytes} > 0`),
+    check("documents_attempt_count_nonnegative", sql`${table.attemptCount} >= 0`),
+    check("documents_chunk_count_nonnegative", sql`${table.chunkCount} >= 0`),
+    check("documents_page_count_positive", sql`${table.pageCount} is null or ${table.pageCount} > 0`),
+    check(
+      "documents_character_count_nonnegative",
+      sql`${table.characterCount} is null or ${table.characterCount} >= 0`,
+    ),
+    check(
+      "documents_embedding_dimensions_positive",
+      sql`${table.embeddingDimensions} is null or ${table.embeddingDimensions} > 0`,
+    ),
+    check(
+      "documents_source_sha256_format",
+      sql`${table.sourceSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "documents_index_fingerprint_format",
+      sql`${table.indexFingerprint} is null or ${table.indexFingerprint} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
+export const documentChunks = pgTable(
+  "document_chunks",
+  {
+    id: uuid("id").primaryKey(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    content: text("content").notNull(),
+    contentHash: varchar("content_hash", { length: 64 }).notNull(),
+    pageNumber: integer("page_number"),
+    startOffset: integer("start_offset").notNull(),
+    endOffset: integer("end_offset").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("document_chunks_document_ordinal_unique").on(table.documentId, table.ordinal),
+    check("document_chunks_ordinal_nonnegative", sql`${table.ordinal} >= 0`),
+    check(
+      "document_chunks_page_number_positive",
+      sql`${table.pageNumber} is null or ${table.pageNumber} > 0`,
+    ),
+    check("document_chunks_start_offset_nonnegative", sql`${table.startOffset} >= 0`),
+    check("document_chunks_end_offset_order", sql`${table.endOffset} > ${table.startOffset}`),
+    check(
+      "document_chunks_content_hash_format",
+      sql`${table.contentHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
 export type UserRecord = typeof users.$inferSelect;
 export type SessionRecord = typeof sessions.$inferSelect;
 export type ResearchSpaceRecord = typeof researchSpaces.$inferSelect;
@@ -242,3 +346,5 @@ export type ChatMessageRecord = typeof chatMessages.$inferSelect;
 export type PaperRecord = typeof papers.$inferSelect;
 export type SavedPaperRecord = typeof savedPapers.$inferSelect;
 export type PaperSummaryRecord = typeof paperSummaries.$inferSelect;
+export type DocumentRecord = typeof documents.$inferSelect;
+export type DocumentChunkRecord = typeof documentChunks.$inferSelect;

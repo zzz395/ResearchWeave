@@ -17,6 +17,7 @@ const environmentSchema = z.object({
   LLM_BASE_URL: z.string().url().optional(),
   LLM_API_KEY: z.string().trim().min(1).optional(),
   LLM_MODEL: z.string().trim().min(1).optional(),
+  DOCUMENT_STORAGE_DIR: z.string().trim().min(1).default("./data/documents"),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

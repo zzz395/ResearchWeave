@@ -1,17 +1,22 @@
 import "dotenv/config";
 
 import { createServer } from "node:http";
+import path from "node:path";
 
 import { createApp } from "./app";
 import { loadEnvironment } from "./config/env";
 import { createLogger } from "./config/logger";
 import { createDatabase } from "./db/client";
 import { ArxivClient } from "./integrations/arxiv/client";
+import { LocalFilesystemDocumentStorage } from "./integrations/document-storage/local-filesystem-storage";
+import { createDocumentUploadMiddleware } from "./integrations/document-upload/middleware";
 import { OpenAICompatibleResearchSummaryGenerator } from "./integrations/research-summary/openai-compatible-generator";
 import { createDrizzleChatRepository } from "./modules/chat/repository";
 import { createChatService } from "./modules/chat/service";
 import { createDrizzleConnectionRepository } from "./modules/connections/repository";
 import { createConnectionService } from "./modules/connections/service";
+import { createDrizzleDocumentRepository } from "./modules/documents/repository";
+import { createDocumentService } from "./modules/documents/service";
 import { createDrizzleAuthRepository } from "./modules/auth/repository";
 import { createAuthService } from "./modules/auth/service";
 import { createDrizzleMemberRepository } from "./modules/members/repository";
@@ -38,6 +43,15 @@ const spaceService = createSpaceService(spaceRepository, {
   spaceDeleted: (spaceId) => realtimeHub.revokeSpace(spaceId),
 });
 const connectionService = createConnectionService(connectionRepository);
+const documentStorage = new LocalFilesystemDocumentStorage(
+  path.resolve(process.cwd(), environment.DOCUMENT_STORAGE_DIR),
+);
+const documentService = createDocumentService(
+  createDrizzleDocumentRepository(database),
+  documentStorage,
+  logger,
+);
+const documentUploadMiddleware = createDocumentUploadMiddleware(documentStorage, logger);
 const memberService = createMemberService(
   createDrizzleMemberRepository(database),
   spaceRepository,
@@ -70,6 +84,8 @@ const app = createApp({
   memberService,
   chatService,
   researchService,
+  documentService,
+  documentUploadMiddleware,
 });
 const server = createServer(app);
 const realtimeGateway = attachRealtimeGateway({
