@@ -77,4 +77,3 @@ export function validateDocumentSource(
     sourceSha256: createDocumentSourceSha256(bytes),
   };
 }
-

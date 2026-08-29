@@ -65,4 +65,3 @@ export type DocumentStage = z.infer<typeof documentStageSchema>;
 export type Document = z.infer<typeof documentSchema>;
 export type DocumentListQuery = z.infer<typeof documentListQuerySchema>;
 export type DocumentListResponse = z.infer<typeof documentListResponseSchema>;
-

@@ -135,4 +135,3 @@ describe("document shared contracts", () => {
     ).toThrow();
   });
 });
-
