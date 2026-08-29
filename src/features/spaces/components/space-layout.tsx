@@ -49,6 +49,7 @@ export function Component() {
         <NavLink end to={`/spaces/${space.id}`}>Overview</NavLink>
         <NavLink to={`/spaces/${space.id}/chat`}>Chat</NavLink>
         <NavLink to={`/spaces/${space.id}/saved-papers`}>Saved Papers</NavLink>
+        <NavLink to={`/spaces/${space.id}/knowledge`}>Knowledge Base</NavLink>
         <NavLink to={`/spaces/${space.id}/members`}>Members</NavLink>
         {space.role === "owner" ? <NavLink to={`/spaces/${space.id}/settings`}>Settings</NavLink> : null}
       </nav>

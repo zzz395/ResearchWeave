@@ -6,6 +6,8 @@ import { createApp } from "../../server/app";
 import { createAuthService } from "../../server/modules/auth/service";
 import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
+import { createDocumentUploadMiddleware } from "../../server/integrations/document-upload/middleware";
+import { createDocumentService } from "../../server/modules/documents/service";
 import { createMemberService } from "../../server/modules/members/service";
 import { createResearchService } from "../../server/modules/research/service";
 import { createSpaceService, type SpaceService } from "../../server/modules/spaces/service";
@@ -16,6 +18,8 @@ import {
   InMemoryAuthRepository,
   InMemoryChatRepository,
   InMemoryConnectionRepository,
+  InMemoryDocumentRepository,
+  InMemoryDocumentStorage,
   InMemoryMemberRepository,
   InMemoryPaperRepository,
   InMemoryPaperSummaryRepository,
@@ -48,6 +52,8 @@ export async function createRealtimeTestServer() {
     spaceRepository,
   );
   const summaryRepository = new InMemoryPaperSummaryRepository(paperRepository);
+  const documentRepository = new InMemoryDocumentRepository(spaceRepository);
+  const documentStorage = new InMemoryDocumentStorage();
   const hub = new RealtimeHub();
   const authService = createAuthService(authRepository, {
     sessionEnded: (tokenHash) => hub.closeSession(tokenHash),
@@ -86,6 +92,8 @@ export async function createRealtimeTestServer() {
     summaryRepository,
   );
   const logger = pino({ level: "silent" });
+  const documentService = createDocumentService(documentRepository, documentStorage, logger);
+  const documentUploadMiddleware = createDocumentUploadMiddleware(documentStorage, logger);
   const app = createApp({
     environment: testEnvironment,
     logger,
@@ -96,6 +104,8 @@ export async function createRealtimeTestServer() {
     memberService,
     chatService,
     researchService,
+    documentService,
+    documentUploadMiddleware,
   });
   const server = createServer(app);
   const gateway = attachRealtimeGateway({

@@ -18,6 +18,8 @@ import { createChatHistoryRouter } from "./modules/chat/routes";
 import type { ChatService } from "./modules/chat/service";
 import { createConnectionRouter } from "./modules/connections/routes";
 import type { ConnectionService } from "./modules/connections/service";
+import { createDocumentRouter } from "./modules/documents/routes";
+import type { DocumentService } from "./modules/documents/service";
 import { createMemberRouter } from "./modules/members/routes";
 import type { MemberService } from "./modules/members/service";
 import { createResearchRouter, createSavedPaperRouter } from "./modules/research/routes";
@@ -37,6 +39,8 @@ export interface AppDependencies {
   memberService: MemberService;
   chatService: ChatService;
   researchService: ResearchService;
+  documentService: DocumentService;
+  documentUploadMiddleware: import("express").RequestHandler;
 }
 
 export function createApp({
@@ -49,6 +53,8 @@ export function createApp({
   memberService,
   chatService,
   researchService,
+  documentService,
+  documentUploadMiddleware,
 }: AppDependencies): Express {
   const app = express();
 
@@ -85,6 +91,11 @@ export function createApp({
     "/api/v1/spaces/:spaceId/saved-papers",
     requireAuthentication,
     createSavedPaperRouter(researchService),
+  );
+  app.use(
+    "/api/v1/spaces/:spaceId/documents",
+    requireAuthentication,
+    createDocumentRouter(documentService, documentUploadMiddleware),
   );
   app.use("/api/v1/research", requireAuthentication, createResearchRouter(researchService));
   app.use("/api/v1/spaces", requireAuthentication, createSpaceRouter(spaceService));

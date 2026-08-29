@@ -16,6 +16,7 @@
   },
   "include": [
     "server",
+    "scripts",
     "shared",
     "tests",
     "vite.config.ts",

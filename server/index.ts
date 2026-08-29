@@ -1,17 +1,30 @@
 import "dotenv/config";
 
 import { createServer } from "node:http";
+import path from "node:path";
 
 import { createApp } from "./app";
 import { loadEnvironment } from "./config/env";
 import { createLogger } from "./config/logger";
 import { createDatabase } from "./db/client";
 import { ArxivClient } from "./integrations/arxiv/client";
+import { OpenAICompatibleDocumentEmbeddingGenerator } from "./integrations/document-embedding/openai-compatible-document-embedding-generator";
+import { createDocumentTextExtractor } from "./integrations/document-extraction/document-text-extractor";
+import { LocalFilesystemDocumentStorage } from "./integrations/document-storage/local-filesystem-storage";
+import { createDocumentUploadMiddleware } from "./integrations/document-upload/middleware";
 import { OpenAICompatibleResearchSummaryGenerator } from "./integrations/research-summary/openai-compatible-generator";
 import { createDrizzleChatRepository } from "./modules/chat/repository";
 import { createChatService } from "./modules/chat/service";
 import { createDrizzleConnectionRepository } from "./modules/connections/repository";
 import { createConnectionService } from "./modules/connections/service";
+import { createDrizzleDocumentRepository } from "./modules/documents/repository";
+import { createDocumentChunker } from "./modules/documents/document-chunker";
+import {
+  UnconfiguredDocumentEmbeddingGenerator,
+  type DocumentEmbeddingGenerator,
+} from "./modules/documents/document-embedding-generator";
+import { DocumentIndexingWorker } from "./modules/documents/document-indexing-worker";
+import { createDocumentService } from "./modules/documents/service";
 import { createDrizzleAuthRepository } from "./modules/auth/repository";
 import { createAuthService } from "./modules/auth/service";
 import { createDrizzleMemberRepository } from "./modules/members/repository";
@@ -23,6 +36,7 @@ import { createResearchService } from "./modules/research/service";
 import { createDrizzleSpaceRepository } from "./modules/spaces/repository";
 import { createSpaceService } from "./modules/spaces/service";
 import { attachRealtimeGateway } from "./realtime/gateway";
+import { attachDocumentWorkerStartupLifecycle } from "./startup-lifecycle";
 import { RealtimeHub } from "./realtime/hub";
 
 const environment = loadEnvironment();
@@ -38,6 +52,16 @@ const spaceService = createSpaceService(spaceRepository, {
   spaceDeleted: (spaceId) => realtimeHub.revokeSpace(spaceId),
 });
 const connectionService = createConnectionService(connectionRepository);
+const documentStorage = new LocalFilesystemDocumentStorage(
+  path.resolve(process.cwd(), environment.DOCUMENT_STORAGE_DIR),
+);
+const documentRepository = createDrizzleDocumentRepository(database);
+const documentService = createDocumentService(
+  documentRepository,
+  documentStorage,
+  logger,
+);
+const documentUploadMiddleware = createDocumentUploadMiddleware(documentStorage, logger);
 const memberService = createMemberService(
   createDrizzleMemberRepository(database),
   spaceRepository,
@@ -60,6 +84,21 @@ const researchService = createResearchService(
   createDrizzlePaperSummaryRepository(database),
   summaryGenerator,
 );
+const documentEmbeddingGenerator: DocumentEmbeddingGenerator =
+  environment.LLM_BASE_URL && environment.LLM_API_KEY
+    ? new OpenAICompatibleDocumentEmbeddingGenerator({
+        baseUrl: environment.LLM_BASE_URL,
+        apiKey: environment.LLM_API_KEY,
+      })
+    : new UnconfiguredDocumentEmbeddingGenerator();
+const documentIndexingWorker = new DocumentIndexingWorker({
+  repository: documentRepository,
+  storage: documentStorage,
+  extractor: createDocumentTextExtractor(),
+  chunker: createDocumentChunker(),
+  embeddingGenerator: documentEmbeddingGenerator,
+  logger,
+});
 const app = createApp({
   environment,
   logger,
@@ -70,6 +109,8 @@ const app = createApp({
   memberService,
   chatService,
   researchService,
+  documentService,
+  documentUploadMiddleware,
 });
 const server = createServer(app);
 const realtimeGateway = attachRealtimeGateway({
@@ -82,9 +123,23 @@ const realtimeGateway = attachRealtimeGateway({
   hub: realtimeHub,
 });
 
-server.on("error", (error) => {
-  logger.fatal({ errorType: error.name }, "HTTP server failed");
-  process.exitCode = 1;
+const documentWorkerLifecycle = attachDocumentWorkerStartupLifecycle(server, {
+  startWorker: () => documentIndexingWorker.start(),
+  stopWorker: () => documentIndexingWorker.stop(),
+  onServerError: (error) => {
+    logger.fatal({ errorType: error.name }, "HTTP server failed");
+    process.exitCode = 1;
+  },
+  onWorkerStartError: (error) => {
+    logger.fatal(
+      { errorType: error instanceof Error ? error.name : "UnknownError" },
+      "document indexing worker failed to start",
+    );
+    process.exitCode = 1;
+    if (server.listening) {
+      server.close();
+    }
+  },
 });
 
 server.listen(environment.PORT, "0.0.0.0", () => {
@@ -98,6 +153,7 @@ async function shutdown(signal: NodeJS.Signals) {
   shuttingDown = true;
   logger.info({ signal }, "graceful shutdown started");
 
+  await documentWorkerLifecycle.shutdownWorker();
   await realtimeGateway.close();
   await new Promise<void>((resolve) => {
     server.close(() => resolve());

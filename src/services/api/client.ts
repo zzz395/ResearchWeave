@@ -41,6 +41,8 @@ export async function apiRequest<T>(
   options: ApiRequestOptions = {},
 ): Promise<T> {
   const { acceptedStatuses = [200], headers, ...requestOptions } = options;
+  const hasFormDataBody =
+    typeof FormData !== "undefined" && requestOptions.body instanceof FormData;
   let response: Response;
 
   try {
@@ -49,7 +51,9 @@ export async function apiRequest<T>(
       credentials: "include",
       headers: {
         Accept: "application/json",
-        ...(requestOptions.body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(requestOptions.body === undefined || hasFormDataBody
+          ? {}
+          : { "Content-Type": "application/json" }),
         ...headers,
       },
     });

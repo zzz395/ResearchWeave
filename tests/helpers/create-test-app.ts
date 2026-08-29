@@ -1,10 +1,16 @@
-import pino from "pino";
+import pino, { type Logger } from "pino";
 
 import { createApp } from "../../server/app";
 import type { Environment } from "../../server/config/env";
 import { createAuthService } from "../../server/modules/auth/service";
 import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
+import {
+  createDocumentUploadMiddleware,
+  type DocumentUploadMiddlewareOptions,
+} from "../../server/integrations/document-upload/middleware";
+import type { DocumentStorage } from "../../server/integrations/document-storage/storage";
+import { createDocumentService } from "../../server/modules/documents/service";
 import { createMemberService } from "../../server/modules/members/service";
 import type { ArxivClient } from "../../server/integrations/arxiv/client";
 import type { ResearchSummaryGenerator } from "../../server/integrations/research-summary/generator";
@@ -14,6 +20,8 @@ import {
   InMemoryAuthRepository,
   InMemoryChatRepository,
   InMemoryConnectionRepository,
+  InMemoryDocumentRepository,
+  InMemoryDocumentStorage,
   InMemoryMemberRepository,
   InMemoryPaperRepository,
   InMemoryPaperSummaryRepository,
@@ -28,6 +36,7 @@ export const testEnvironment: Environment = {
   DATABASE_URL: "postgresql://test:test@localhost:5432/test",
   CLIENT_ORIGIN: "http://localhost:5173",
   LOG_LEVEL: "silent",
+  DOCUMENT_STORAGE_DIR: "./data/documents-test",
 };
 
 const emptyArxivClient: Pick<ArxivClient, "search"> = {
@@ -44,6 +53,9 @@ export function createTestApp(
   checkDatabase: () => Promise<void> = () => Promise.resolve(),
   arxivClient: Pick<ArxivClient, "search"> = emptyArxivClient,
   summaryGenerator?: ResearchSummaryGenerator,
+  documentStorage: DocumentStorage = new InMemoryDocumentStorage(),
+  documentUploadOptions: DocumentUploadMiddlewareOptions = {},
+  logger: Logger = pino({ level: "silent" }),
 ) {
   const authRepository = new InMemoryAuthRepository();
   const spaceRepository = new InMemorySpaceRepository();
@@ -56,6 +68,7 @@ export function createTestApp(
     spaceRepository,
   );
   const summaryRepository = new InMemoryPaperSummaryRepository(paperRepository);
+  const documentRepository = new InMemoryDocumentRepository(spaceRepository);
   const authService = createAuthService(authRepository);
   const spaceService = createSpaceService(spaceRepository);
   const connectionService = createConnectionService(connectionRepository);
@@ -68,9 +81,15 @@ export function createTestApp(
     summaryRepository,
     summaryGenerator,
   );
+  const documentService = createDocumentService(documentRepository, documentStorage, logger);
+  const documentUploadMiddleware = createDocumentUploadMiddleware(
+    documentStorage,
+    logger,
+    documentUploadOptions,
+  );
   const app = createApp({
     environment: testEnvironment,
-    logger: pino({ level: "silent" }),
+    logger,
     checkDatabase,
     authService,
     spaceService,
@@ -78,6 +97,8 @@ export function createTestApp(
     memberService,
     chatService,
     researchService,
+    documentService,
+    documentUploadMiddleware,
   });
 
   return {
@@ -90,9 +111,12 @@ export function createTestApp(
     paperRepository,
     savedPaperRepository,
     summaryRepository,
+    documentRepository,
+    documentStorage,
     authService,
     spaceService,
     chatService,
     researchService,
+    documentService,
   };
 }
