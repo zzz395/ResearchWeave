@@ -52,6 +52,16 @@ export function createDocumentRouter(
     response.status(200).json(documentResponseSchema.parse({ document }));
   });
 
+  router.post("/:documentId/reindex", async (request, response) => {
+    const { spaceId, documentId } = documentParamsSchema.parse(request.params);
+    const document = await service.queueDocumentReindex(
+      spaceId,
+      documentId,
+      requireActor(request).id,
+    );
+    response.status(202).json(documentResponseSchema.parse({ document }));
+  });
+
   router.delete("/:documentId", async (request, response) => {
     const { spaceId, documentId } = documentParamsSchema.parse(request.params);
     await service.deleteDocument(spaceId, documentId, requireActor(request).id);
@@ -60,4 +70,3 @@ export function createDocumentRouter(
 
   return router;
 }
-

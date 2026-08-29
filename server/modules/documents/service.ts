@@ -55,6 +55,7 @@ export interface DocumentService {
   ): Promise<DocumentListResponse>;
   getDocument(spaceId: string, documentId: string, actorId: string): Promise<Document>;
   deleteDocument(spaceId: string, documentId: string, actorId: string): Promise<void>;
+  queueDocumentReindex(spaceId: string, documentId: string, actorId: string): Promise<Document>;
 }
 
 export function documentStorageErrorToAppError(error: DocumentStorageError): AppError {
@@ -270,6 +271,24 @@ export function createDocumentService(
         );
       }
       await bestEffortDelete(result.storageKey, "document_deleted");
+    },
+
+    async queueDocumentReindex(spaceId, documentId, actorId) {
+      const result = await repository.queueReindexForMember(spaceId, documentId, actorId);
+      if (result.status === "space_not_found") {
+        throw new AppError(404, "space_not_found", "Research space was not found.");
+      }
+      if (result.status === "document_not_found") {
+        throw new AppError(404, "document_not_found", "Document was not found.");
+      }
+      if (result.status === "forbidden") {
+        throw new AppError(
+          403,
+          "document_reindex_forbidden",
+          "Only the original uploader or the space owner can reindex this document.",
+        );
+      }
+      return toDocument(result.record);
     },
   };
 }

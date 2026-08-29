@@ -8,6 +8,8 @@ import { loadEnvironment } from "./config/env";
 import { createLogger } from "./config/logger";
 import { createDatabase } from "./db/client";
 import { ArxivClient } from "./integrations/arxiv/client";
+import { OpenAICompatibleDocumentEmbeddingGenerator } from "./integrations/document-embedding/openai-compatible-document-embedding-generator";
+import { createDocumentTextExtractor } from "./integrations/document-extraction/document-text-extractor";
 import { LocalFilesystemDocumentStorage } from "./integrations/document-storage/local-filesystem-storage";
 import { createDocumentUploadMiddleware } from "./integrations/document-upload/middleware";
 import { OpenAICompatibleResearchSummaryGenerator } from "./integrations/research-summary/openai-compatible-generator";
@@ -16,6 +18,12 @@ import { createChatService } from "./modules/chat/service";
 import { createDrizzleConnectionRepository } from "./modules/connections/repository";
 import { createConnectionService } from "./modules/connections/service";
 import { createDrizzleDocumentRepository } from "./modules/documents/repository";
+import { createDocumentChunker } from "./modules/documents/document-chunker";
+import {
+  UnconfiguredDocumentEmbeddingGenerator,
+  type DocumentEmbeddingGenerator,
+} from "./modules/documents/document-embedding-generator";
+import { DocumentIndexingWorker } from "./modules/documents/document-indexing-worker";
 import { createDocumentService } from "./modules/documents/service";
 import { createDrizzleAuthRepository } from "./modules/auth/repository";
 import { createAuthService } from "./modules/auth/service";
@@ -46,8 +54,9 @@ const connectionService = createConnectionService(connectionRepository);
 const documentStorage = new LocalFilesystemDocumentStorage(
   path.resolve(process.cwd(), environment.DOCUMENT_STORAGE_DIR),
 );
+const documentRepository = createDrizzleDocumentRepository(database);
 const documentService = createDocumentService(
-  createDrizzleDocumentRepository(database),
+  documentRepository,
   documentStorage,
   logger,
 );
@@ -74,6 +83,21 @@ const researchService = createResearchService(
   createDrizzlePaperSummaryRepository(database),
   summaryGenerator,
 );
+const documentEmbeddingGenerator: DocumentEmbeddingGenerator =
+  environment.LLM_BASE_URL && environment.LLM_API_KEY
+    ? new OpenAICompatibleDocumentEmbeddingGenerator({
+        baseUrl: environment.LLM_BASE_URL,
+        apiKey: environment.LLM_API_KEY,
+      })
+    : new UnconfiguredDocumentEmbeddingGenerator();
+const documentIndexingWorker = new DocumentIndexingWorker({
+  repository: documentRepository,
+  storage: documentStorage,
+  extractor: createDocumentTextExtractor(),
+  chunker: createDocumentChunker(),
+  embeddingGenerator: documentEmbeddingGenerator,
+  logger,
+});
 const app = createApp({
   environment,
   logger,
@@ -98,6 +122,8 @@ const realtimeGateway = attachRealtimeGateway({
   hub: realtimeHub,
 });
 
+await documentIndexingWorker.start();
+
 server.on("error", (error) => {
   logger.fatal({ errorType: error.name }, "HTTP server failed");
   process.exitCode = 1;
@@ -114,6 +140,7 @@ async function shutdown(signal: NodeJS.Signals) {
   shuttingDown = true;
   logger.info({ signal }, "graceful shutdown started");
 
+  await documentIndexingWorker.stop();
   await realtimeGateway.close();
   await new Promise<void>((resolve) => {
     server.close(() => resolve());

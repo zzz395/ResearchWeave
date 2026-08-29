@@ -25,6 +25,7 @@ import {
   MAX_DOCUMENT_FILE_BYTES,
   type DocumentUploadMiddlewareOptions,
 } from "../../server/integrations/document-upload/middleware";
+import { DOCUMENT_EMBEDDING_DIMENSIONS } from "../../server/modules/documents/document-embedding-generator";
 import { createTestApp, testEnvironment } from "../helpers/create-test-app";
 
 const origin = testEnvironment.CLIENT_ORIGIN;
@@ -51,6 +52,10 @@ class ObservedDocumentStorage implements DocumentStorage {
 
   readStaged(stagedPath: string): Promise<Buffer> {
     return this.delegate.readStaged(stagedPath);
+  }
+
+  readSource(storageKey: string): Promise<Uint8Array> {
+    return this.delegate.readSource(storageKey);
   }
 
   promote(stagedPath: string, storageKey: string): Promise<void> {
@@ -729,5 +734,198 @@ describe("document upload and delete failure consistency", () => {
       .expect(204);
     expect(harness.documentRepository.documents.has(document.id)).toBe(false);
     expect(harness.storage.deletedKeys).toHaveLength(1);
+  });
+});
+
+describe("document reindex API", () => {
+  it("allows the owner and current original uploader while denying another member", async () => {
+    const harness = await createHarness();
+    const ownerAgent = request.agent(harness.app);
+    const uploaderAgent = request.agent(harness.app);
+    const otherAgent = request.agent(harness.app);
+    const owner = await register(ownerAgent, "reindex-owner@example.com", "Reindex Owner");
+    const uploader = await register(
+      uploaderAgent,
+      "reindex-uploader@example.com",
+      "Reindex Uploader",
+    );
+    const other = await register(otherAgent, "reindex-other@example.com", "Reindex Other");
+    const space = await createSpace(ownerAgent, "Reindex Authorization");
+    harness.spaceRepository.addMember(space.id, uploader.id);
+    harness.spaceRepository.addMember(space.id, other.id);
+    const uploaded = documentUploadResponseSchema.parse(
+      (await upload(uploaderAgent, space.id, "notes.txt", "reindex source").expect(201)).body,
+    ).document;
+    const original = harness.documentRepository.documents.get(uploaded.id)!;
+    const indexedAt = new Date("2026-08-20T00:00:00.000Z");
+    const lastAttemptAt = new Date("2026-08-19T00:00:00.000Z");
+    harness.documentRepository.documents.set(uploaded.id, {
+      ...original,
+      status: "ready",
+      attemptCount: 4,
+      lastAttemptAt,
+      characterCount: 14,
+      chunkCount: 1,
+      extractorVersion: "utf8-source-v1",
+      chunkerVersion: "deterministic-char-v1",
+      embeddingModel: "text-embedding-3-small",
+      embeddingDimensions: DOCUMENT_EMBEDDING_DIMENSIONS,
+      indexFingerprint: "a".repeat(64),
+      indexedAt,
+    });
+    const activeChunks = [
+      {
+        ordinal: 0,
+        content: "reindex source",
+        contentHash: "b".repeat(64),
+        pageNumber: null,
+        startOffset: 0,
+        endOffset: 14,
+        embedding: Array.from({ length: DOCUMENT_EMBEDDING_DIMENSIONS }, () => 0.1),
+      },
+    ];
+    harness.documentRepository.documentChunks.set(uploaded.id, activeChunks);
+
+    const forbidden = await otherAgent
+      .post(`/api/v1/spaces/${space.id}/documents/${uploaded.id}/reindex`)
+      .set("Origin", origin)
+      .expect(403);
+    expect(errorEnvelopeSchema.parse(forbidden.body).error.code).toBe(
+      "document_reindex_forbidden",
+    );
+
+    const uploaderResponse = documentResponseSchema.parse(
+      (
+        await uploaderAgent
+          .post(`/api/v1/spaces/${space.id}/documents/${uploaded.id}/reindex`)
+          .set("Origin", origin)
+          .expect(202)
+      ).body,
+    );
+    expect(uploaderResponse.document).toMatchObject({
+      status: "queued",
+      stage: null,
+      attemptCount: 4,
+      lastAttemptAt: lastAttemptAt.toISOString(),
+      chunkCount: 1,
+      embeddingModel: "text-embedding-3-small",
+      embeddingDimensions: DOCUMENT_EMBEDDING_DIMENSIONS,
+      indexFingerprint: "a".repeat(64),
+      indexedAt: indexedAt.toISOString(),
+    });
+    expect(harness.documentRepository.documentChunks.get(uploaded.id)).toEqual(activeChunks);
+
+    const queued = harness.documentRepository.documents.get(uploaded.id)!;
+    harness.documentRepository.documents.set(uploaded.id, { ...queued, status: "ready" });
+    await ownerAgent
+      .post(`/api/v1/spaces/${space.id}/documents/${uploaded.id}/reindex`)
+      .set("Origin", origin)
+      .expect(202);
+    expect(harness.documentRepository.documents.get(uploaded.id)?.status).toBe("queued");
+    expect(owner.id).toBe(space.ownerId);
+  });
+
+  it("denies a former uploader and allows only the owner when uploader provenance is null", async () => {
+    const harness = await createHarness();
+    const ownerAgent = request.agent(harness.app);
+    const uploaderAgent = request.agent(harness.app);
+    const memberAgent = request.agent(harness.app);
+    await register(ownerAgent, "provenance-owner@example.com");
+    const uploader = await register(uploaderAgent, "provenance-uploader@example.com");
+    const member = await register(memberAgent, "provenance-member@example.com");
+    const space = await createSpace(ownerAgent, "Reindex Provenance");
+    harness.spaceRepository.addMember(space.id, uploader.id);
+    harness.spaceRepository.addMember(space.id, member.id);
+    const uploaded = documentUploadResponseSchema.parse(
+      (await upload(uploaderAgent, space.id, "notes.txt", "provenance").expect(201)).body,
+    ).document;
+
+    harness.spaceRepository.memberships.delete(`${space.id}:${uploader.id}`);
+    const former = await uploaderAgent
+      .post(`/api/v1/spaces/${space.id}/documents/${uploaded.id}/reindex`)
+      .set("Origin", origin)
+      .expect(404);
+    expect(errorEnvelopeSchema.parse(former.body).error.code).toBe("space_not_found");
+
+    const record = harness.documentRepository.documents.get(uploaded.id)!;
+    harness.documentRepository.documents.set(uploaded.id, {
+      ...record,
+      uploadedByUserId: null,
+      status: "failed",
+      stage: "embedding",
+      errorCode: "document_embedding_unavailable",
+      failedAt: new Date(),
+    });
+    const memberResponse = await memberAgent
+      .post(`/api/v1/spaces/${space.id}/documents/${uploaded.id}/reindex`)
+      .set("Origin", origin)
+      .expect(403);
+    expect(errorEnvelopeSchema.parse(memberResponse.body).error.code).toBe(
+      "document_reindex_forbidden",
+    );
+    const ownerResponse = documentResponseSchema.parse(
+      (
+        await ownerAgent
+          .post(`/api/v1/spaces/${space.id}/documents/${uploaded.id}/reindex`)
+          .set("Origin", origin)
+          .expect(202)
+      ).body,
+    );
+    expect(ownerResponse.document).toMatchObject({
+      status: "queued",
+      stage: null,
+      errorCode: null,
+      failedAt: null,
+      uploadedByUserId: null,
+    });
+  });
+
+  it("is idempotent for queued and processing states and rejects a wrong Space pair", async () => {
+    const harness = await createHarness();
+    const ownerAgent = request.agent(harness.app);
+    await register(ownerAgent, "idempotent-reindex@example.com");
+    const firstSpace = await createSpace(ownerAgent, "Reindex Queue One");
+    const secondSpace = await createSpace(ownerAgent, "Reindex Queue Two");
+    const uploaded = documentUploadResponseSchema.parse(
+      (await upload(ownerAgent, firstSpace.id, "notes.txt", "queue me").expect(201)).body,
+    ).document;
+
+    const queued = documentResponseSchema.parse(
+      (
+        await ownerAgent
+          .post(`/api/v1/spaces/${firstSpace.id}/documents/${uploaded.id}/reindex`)
+          .set("Origin", origin)
+          .expect(202)
+      ).body,
+    );
+    expect(queued.document).toMatchObject({ status: "queued", attemptCount: 0 });
+
+    const record = harness.documentRepository.documents.get(uploaded.id)!;
+    harness.documentRepository.documents.set(uploaded.id, {
+      ...record,
+      status: "processing",
+      stage: "extracting",
+      attemptCount: 1,
+      lastAttemptAt: new Date("2026-08-29T00:00:00.000Z"),
+    });
+    const processing = documentResponseSchema.parse(
+      (
+        await ownerAgent
+          .post(`/api/v1/spaces/${firstSpace.id}/documents/${uploaded.id}/reindex`)
+          .set("Origin", origin)
+          .expect(202)
+      ).body,
+    );
+    expect(processing.document).toMatchObject({
+      status: "processing",
+      stage: "extracting",
+      attemptCount: 1,
+    });
+
+    const wrongSpace = await ownerAgent
+      .post(`/api/v1/spaces/${secondSpace.id}/documents/${uploaded.id}/reindex`)
+      .set("Origin", origin)
+      .expect(404);
+    expect(errorEnvelopeSchema.parse(wrongSpace.body).error.code).toBe("document_not_found");
   });
 });

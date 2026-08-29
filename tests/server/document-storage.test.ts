@@ -42,6 +42,7 @@ describe("local filesystem document storage", () => {
       "original",
     );
     await expect(readFile(stagedPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(storage.readSource(storageKey)).resolves.toEqual(Buffer.from("original"));
   });
 
   it("does not accept an original filename when determining the final destination", async () => {
@@ -69,8 +70,15 @@ describe("local filesystem document storage", () => {
       await expect(storage.promote(stagedPath, storageKey)).rejects.toBeInstanceOf(
         DocumentStorageError,
       );
+      await expect(storage.readSource(storageKey)).rejects.toBeInstanceOf(DocumentStorageError);
     },
   );
+
+  it("reports a missing durable source explicitly", async () => {
+    await expect(storage.readSource("spaces/space/document/source")).rejects.toBeInstanceOf(
+      DocumentStorageError,
+    );
+  });
 
   it("rejects staged paths outside the configured staging root", async () => {
     const outside = path.join(root, "outside");
@@ -87,4 +95,3 @@ describe("local filesystem document storage", () => {
     );
   });
 });
-

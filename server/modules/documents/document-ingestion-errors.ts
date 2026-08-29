@@ -6,7 +6,14 @@ export type DocumentIngestionErrorCode =
   | "document_text_limit_exceeded"
   | "document_no_extractable_text"
   | "document_chunk_limit_exceeded"
-  | "document_pdf_extraction_failed";
+  | "document_pdf_extraction_failed"
+  | "document_source_unavailable"
+  | "document_no_indexable_text"
+  | "document_embedding_unconfigured"
+  | "document_embedding_unavailable"
+  | "document_embedding_rejected"
+  | "document_embedding_invalid_response"
+  | "document_index_persistence_failed";
 
 const messages: Record<DocumentIngestionErrorCode, string> = {
   document_invalid_utf8: "The document is not valid UTF-8.",
@@ -17,6 +24,13 @@ const messages: Record<DocumentIngestionErrorCode, string> = {
   document_no_extractable_text: "The PDF document has no extractable text.",
   document_chunk_limit_exceeded: "The document exceeds the chunk limit.",
   document_pdf_extraction_failed: "PDF text extraction failed.",
+  document_source_unavailable: "The durable document source is unavailable.",
+  document_no_indexable_text: "The document has no indexable text.",
+  document_embedding_unconfigured: "Document embeddings are not configured.",
+  document_embedding_unavailable: "The document embedding provider is unavailable.",
+  document_embedding_rejected: "The document embedding provider rejected the request.",
+  document_embedding_invalid_response: "The document embedding provider returned an invalid response.",
+  document_index_persistence_failed: "The document index could not be activated.",
 };
 
 export class DocumentIngestionError extends Error {

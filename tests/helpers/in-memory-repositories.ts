@@ -54,12 +54,17 @@ import type {
 } from "../../server/modules/research/summary-repository";
 import type {
   CreateDocumentResult,
+  ActivateDocumentIndexInput,
+  ActivateDocumentIndexResult,
   DeleteDocumentResult,
   DocumentCursorRecord,
   DocumentDetailResult,
   DocumentListResult,
   DocumentRepository,
+  DocumentIndexChunk,
+  DocumentIndexingClaim,
   NewDocumentRecord,
+  QueueDocumentReindexResult,
 } from "../../server/modules/documents/repository";
 import type { DocumentStorage } from "../../server/integrations/document-storage/storage";
 import {
@@ -490,8 +495,15 @@ export class InMemorySavedPaperRepository implements SavedPaperRepository {
 
 export class InMemoryDocumentRepository implements DocumentRepository {
   readonly documents = new Map<string, DocumentRecord>();
+  readonly documentChunks = new Map<string, DocumentIndexChunk[]>();
+  readonly claimedDocumentIds: string[] = [];
+  readonly stageUpdates: Array<{ documentId: string; stage: DocumentRecord["stage"] }> = [];
+  readonly activationEvents: string[] = [];
   failNextCreate = false;
+  failNextActivationAt?: "after_delete" | "during_insert" | "before_document_update";
   beforeNextCreate?: () => void;
+  beforeNextActivation?: () => void;
+  beforeNextStageUpdate?: () => void;
 
   constructor(private readonly spaces: InMemorySpaceRepository) {}
 
@@ -574,17 +586,215 @@ export class InMemoryDocumentRepository implements DocumentRepository {
       return Promise.resolve({ status: "forbidden" });
     }
     this.documents.delete(documentId);
+    this.documentChunks.delete(documentId);
     return Promise.resolve({ status: "removed", storageKey: record.storageKey });
+  }
+
+  queueReindexForMember(
+    spaceId: string,
+    documentId: string,
+    actorId: string,
+  ): Promise<QueueDocumentReindexResult> {
+    const role = this.spaces.memberships.get(`${spaceId}:${actorId}`);
+    if (!role) return Promise.resolve({ status: "space_not_found" });
+    const record = this.documents.get(documentId);
+    if (!record || record.spaceId !== spaceId) {
+      return Promise.resolve({ status: "document_not_found" });
+    }
+    if (role !== "owner" && record.uploadedByUserId !== actorId) {
+      return Promise.resolve({ status: "forbidden" });
+    }
+    if (record.status === "queued" || record.status === "processing") {
+      return Promise.resolve({ status: "accepted", record });
+    }
+    const queued: DocumentRecord = {
+      ...record,
+      status: "queued",
+      stage: null,
+      errorCode: null,
+      failedAt: null,
+      updatedAt: new Date(),
+    };
+    this.documents.set(documentId, queued);
+    return Promise.resolve({ status: "accepted", record: queued });
+  }
+
+  recoverProcessingDocuments(now: Date): Promise<number> {
+    let recovered = 0;
+    for (const [id, record] of this.documents) {
+      if (record.status !== "processing") continue;
+      this.documents.set(id, { ...record, status: "queued", stage: null, updatedAt: now });
+      recovered += 1;
+    }
+    return Promise.resolve(recovered);
+  }
+
+  claimNextQueuedDocument(now: Date): Promise<DocumentIndexingClaim | null> {
+    const record = [...this.documents.values()]
+      .filter((candidate) => candidate.status === "queued")
+      .sort(
+        (left, right) =>
+          left.updatedAt.getTime() - right.updatedAt.getTime() || left.id.localeCompare(right.id),
+      )[0];
+    if (!record) return Promise.resolve(null);
+    const attemptNumber = record.attemptCount + 1;
+    this.documents.set(record.id, {
+      ...record,
+      status: "processing",
+      stage: "extracting",
+      attemptCount: attemptNumber,
+      lastAttemptAt: now,
+      errorCode: null,
+      failedAt: null,
+      updatedAt: now,
+    });
+    this.claimedDocumentIds.push(record.id);
+    return Promise.resolve({
+      documentId: record.id,
+      mediaType: record.mediaType,
+      storageKey: record.storageKey,
+      sourceSha256: record.sourceSha256,
+      attemptNumber,
+    });
+  }
+
+  updateProcessingStage(
+    documentId: string,
+    attemptNumber: number,
+    stage: DocumentRecord["stage"] & {},
+    now: Date,
+  ): Promise<boolean> {
+    this.beforeNextStageUpdate?.();
+    this.beforeNextStageUpdate = undefined;
+    const record = this.documents.get(documentId);
+    if (
+      !record ||
+      record.status !== "processing" ||
+      record.attemptCount !== attemptNumber
+    ) {
+      return Promise.resolve(false);
+    }
+    this.documents.set(documentId, { ...record, stage, updatedAt: now });
+    this.stageUpdates.push({ documentId, stage });
+    return Promise.resolve(true);
+  }
+
+  markIndexingFailed(
+    documentId: string,
+    attemptNumber: number,
+    stage: DocumentRecord["stage"] & {},
+    errorCode: string,
+    now: Date,
+  ): Promise<boolean> {
+    const record = this.documents.get(documentId);
+    if (
+      !record ||
+      record.status !== "processing" ||
+      record.attemptCount !== attemptNumber
+    ) {
+      return Promise.resolve(false);
+    }
+    this.documents.set(documentId, {
+      ...record,
+      status: "failed",
+      stage,
+      errorCode,
+      failedAt: now,
+      updatedAt: now,
+    });
+    return Promise.resolve(true);
+  }
+
+  activateDocumentIndex(
+    input: ActivateDocumentIndexInput,
+    now: Date,
+  ): Promise<ActivateDocumentIndexResult> {
+    this.beforeNextActivation?.();
+    this.beforeNextActivation = undefined;
+    this.activationEvents.length = 0;
+    this.activationEvents.push("begin");
+    const record = this.documents.get(input.documentId);
+    if (
+      !record ||
+      record.status !== "processing" ||
+      record.attemptCount !== input.attemptNumber
+    ) {
+      return Promise.resolve({ status: "stale" });
+    }
+
+    const failurePoint = this.failNextActivationAt;
+    this.failNextActivationAt = undefined;
+    const workingDocument: DocumentRecord = { ...record };
+    const workingChunks = (this.documentChunks.get(input.documentId) ?? []).map((chunk) => ({
+      ...chunk,
+      embedding: [...chunk.embedding],
+    }));
+    workingChunks.length = 0;
+    this.activationEvents.push("delete-old-chunks");
+    if (failurePoint === "after_delete") {
+      this.activationEvents.push("fail", "rollback");
+      return Promise.reject(new Error("simulated document activation failure after delete"));
+    }
+
+    for (let offset = 0; offset < input.chunks.length; offset += 100) {
+      const batch = input.chunks.slice(offset, offset + 100).map((chunk) => ({
+        ...chunk,
+        embedding: [...chunk.embedding],
+      }));
+      workingChunks.push(...batch);
+      this.activationEvents.push("insert-new-batch");
+      if (failurePoint === "during_insert") {
+        this.activationEvents.push("fail", "rollback");
+        return Promise.reject(new Error("simulated document activation failure during insert"));
+      }
+    }
+
+    if (failurePoint === "before_document_update") {
+      this.activationEvents.push("fail", "rollback");
+      return Promise.reject(
+        new Error("simulated document activation failure before document update"),
+      );
+    }
+
+    Object.assign(workingDocument, {
+      status: "ready",
+      stage: null,
+      errorCode: null,
+      failedAt: null,
+      pageCount: input.pageCount,
+      characterCount: input.characterCount,
+      chunkCount: input.chunks.length,
+      extractorVersion: input.extractorVersion,
+      chunkerVersion: input.chunkerVersion,
+      embeddingModel: input.embeddingModel,
+      embeddingDimensions: input.embeddingDimensions,
+      indexFingerprint: input.indexFingerprint,
+      indexedAt: now,
+      updatedAt: now,
+    } satisfies Partial<DocumentRecord>);
+    this.activationEvents.push("update-document", "commit");
+    this.documentChunks.set(input.documentId, workingChunks);
+    this.documents.set(input.documentId, workingDocument);
+    return Promise.resolve({ status: "activated" });
   }
 }
 
 export class InMemoryDocumentStorage implements DocumentStorage {
+  readonly sources = new Map<string, Uint8Array>();
+
   prepareStagingDirectory(): Promise<string> {
     return Promise.reject(new Error("Document upload storage was not configured for this test."));
   }
 
   readStaged(): Promise<Buffer> {
     return Promise.reject(new Error("Document upload storage was not configured for this test."));
+  }
+
+  readSource(storageKey: string): Promise<Uint8Array> {
+    const bytes = this.sources.get(storageKey);
+    return bytes
+      ? Promise.resolve(bytes.slice())
+      : Promise.reject(new Error("Document source is unavailable."));
   }
 
   promote(): Promise<void> {

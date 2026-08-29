@@ -45,6 +45,11 @@ export class LocalFilesystemDocumentStorage implements DocumentStorage {
     return this.run(() => readFile(resolved));
   }
 
+  async readSource(storageKey: string): Promise<Uint8Array> {
+    const resolved = this.resolveStorageKey(storageKey);
+    return this.run(() => readFile(resolved));
+  }
+
   async promote(stagedPath: string, storageKey: string): Promise<void> {
     const staged = this.resolveStagedPath(stagedPath);
     const destination = this.resolveStorageKey(storageKey);
@@ -101,4 +106,3 @@ export class LocalFilesystemDocumentStorage implements DocumentStorage {
     }
   }
 }
-

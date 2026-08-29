@@ -20,8 +20,8 @@ export class DocumentStorageError extends Error {
 export interface DocumentStorage {
   prepareStagingDirectory(): Promise<string>;
   readStaged(stagedPath: string): Promise<Buffer>;
+  readSource(storageKey: string): Promise<Uint8Array>;
   promote(stagedPath: string, storageKey: string): Promise<void>;
   cleanupStaged(stagedPath: string): Promise<void>;
   delete(storageKey: string): Promise<void>;
 }
-
