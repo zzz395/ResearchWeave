@@ -36,6 +36,7 @@ import { createResearchService } from "./modules/research/service";
 import { createDrizzleSpaceRepository } from "./modules/spaces/repository";
 import { createSpaceService } from "./modules/spaces/service";
 import { attachRealtimeGateway } from "./realtime/gateway";
+import { attachDocumentWorkerStartupLifecycle } from "./startup-lifecycle";
 import { RealtimeHub } from "./realtime/hub";
 
 const environment = loadEnvironment();
@@ -122,11 +123,23 @@ const realtimeGateway = attachRealtimeGateway({
   hub: realtimeHub,
 });
 
-await documentIndexingWorker.start();
-
-server.on("error", (error) => {
-  logger.fatal({ errorType: error.name }, "HTTP server failed");
-  process.exitCode = 1;
+const documentWorkerLifecycle = attachDocumentWorkerStartupLifecycle(server, {
+  startWorker: () => documentIndexingWorker.start(),
+  stopWorker: () => documentIndexingWorker.stop(),
+  onServerError: (error) => {
+    logger.fatal({ errorType: error.name }, "HTTP server failed");
+    process.exitCode = 1;
+  },
+  onWorkerStartError: (error) => {
+    logger.fatal(
+      { errorType: error instanceof Error ? error.name : "UnknownError" },
+      "document indexing worker failed to start",
+    );
+    process.exitCode = 1;
+    if (server.listening) {
+      server.close();
+    }
+  },
 });
 
 server.listen(environment.PORT, "0.0.0.0", () => {
@@ -140,7 +153,7 @@ async function shutdown(signal: NodeJS.Signals) {
   shuttingDown = true;
   logger.info({ signal }, "graceful shutdown started");
 
-  await documentIndexingWorker.stop();
+  await documentWorkerLifecycle.shutdownWorker();
   await realtimeGateway.close();
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
