@@ -18,6 +18,8 @@ import {
 import { createMemberService } from "../../server/modules/members/service";
 import type { ArxivClient } from "../../server/integrations/arxiv/client";
 import type { ResearchSummaryGenerator } from "../../server/integrations/research-summary/generator";
+import type { GroundedAnswerGenerator } from "../../server/integrations/grounded-answer/generator";
+import { createGroundedAnswerService } from "../../server/modules/grounded-answer/service";
 import { createResearchService } from "../../server/modules/research/service";
 import { createSemanticRetrievalService } from "../../server/modules/retrieval/service";
 import { createSpaceService } from "../../server/modules/spaces/service";
@@ -64,6 +66,7 @@ export function createTestApp(
   logger: Logger = pino({ level: "silent" }),
   retrievalEmbeddingGenerator: DocumentEmbeddingGenerator =
     new UnconfiguredDocumentEmbeddingGenerator(),
+  groundedAnswerGenerator?: GroundedAnswerGenerator,
 ) {
   const authRepository = new InMemoryAuthRepository();
   const spaceRepository = new InMemorySpaceRepository();
@@ -98,6 +101,11 @@ export function createTestApp(
     semanticRetrievalRepository,
     retrievalEmbeddingGenerator,
   );
+  const groundedAnswerService = createGroundedAnswerService(
+    semanticRetrievalService,
+    semanticRetrievalRepository,
+    groundedAnswerGenerator,
+  );
   const documentUploadMiddleware = createDocumentUploadMiddleware(
     documentStorage,
     logger,
@@ -113,6 +121,7 @@ export function createTestApp(
     memberService,
     chatService,
     researchService,
+    groundedAnswerService,
     semanticRetrievalService,
     documentService,
     documentUploadMiddleware,
@@ -135,6 +144,7 @@ export function createTestApp(
     spaceService,
     chatService,
     researchService,
+    groundedAnswerService,
     semanticRetrievalService,
     documentService,
   };

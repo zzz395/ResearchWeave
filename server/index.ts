@@ -12,6 +12,7 @@ import { OpenAICompatibleDocumentEmbeddingGenerator } from "./integrations/docum
 import { createDocumentTextExtractor } from "./integrations/document-extraction/document-text-extractor";
 import { LocalFilesystemDocumentStorage } from "./integrations/document-storage/local-filesystem-storage";
 import { createDocumentUploadMiddleware } from "./integrations/document-upload/middleware";
+import { OpenAICompatibleGroundedAnswerGenerator } from "./integrations/grounded-answer/openai-compatible-generator";
 import { OpenAICompatibleResearchSummaryGenerator } from "./integrations/research-summary/openai-compatible-generator";
 import { createDrizzleChatRepository } from "./modules/chat/repository";
 import { createChatService } from "./modules/chat/service";
@@ -29,6 +30,7 @@ import { createDrizzleAuthRepository } from "./modules/auth/repository";
 import { createAuthService } from "./modules/auth/service";
 import { createDrizzleMemberRepository } from "./modules/members/repository";
 import { createMemberService } from "./modules/members/service";
+import { createGroundedAnswerService } from "./modules/grounded-answer/service";
 import { createDrizzlePaperRepository } from "./modules/research/paper-repository";
 import { createDrizzleSavedPaperRepository } from "./modules/research/saved-paper-repository";
 import { createDrizzlePaperSummaryRepository } from "./modules/research/summary-repository";
@@ -93,9 +95,23 @@ const documentEmbeddingGenerator: DocumentEmbeddingGenerator =
         apiKey: environment.LLM_API_KEY,
       })
     : new UnconfiguredDocumentEmbeddingGenerator();
+const semanticRetrievalRepository = createDrizzleSemanticRetrievalRepository(database);
 const semanticRetrievalService = createSemanticRetrievalService(
-  createDrizzleSemanticRetrievalRepository(database),
+  semanticRetrievalRepository,
   documentEmbeddingGenerator,
+);
+const groundedAnswerGenerator =
+  environment.LLM_BASE_URL && environment.LLM_API_KEY && environment.LLM_MODEL
+    ? new OpenAICompatibleGroundedAnswerGenerator({
+        baseUrl: environment.LLM_BASE_URL,
+        apiKey: environment.LLM_API_KEY,
+        model: environment.LLM_MODEL,
+      })
+    : undefined;
+const groundedAnswerService = createGroundedAnswerService(
+  semanticRetrievalService,
+  semanticRetrievalRepository,
+  groundedAnswerGenerator,
 );
 const documentIndexingWorker = new DocumentIndexingWorker({
   repository: documentRepository,
@@ -115,6 +131,7 @@ const app = createApp({
   memberService,
   chatService,
   researchService,
+  groundedAnswerService,
   semanticRetrievalService,
   documentService,
   documentUploadMiddleware,

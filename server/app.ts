@@ -20,6 +20,8 @@ import { createConnectionRouter } from "./modules/connections/routes";
 import type { ConnectionService } from "./modules/connections/service";
 import { createDocumentRouter } from "./modules/documents/routes";
 import type { DocumentService } from "./modules/documents/service";
+import { createGroundedAnswerRouter } from "./modules/grounded-answer/routes";
+import type { GroundedAnswerService } from "./modules/grounded-answer/service";
 import { createMemberRouter } from "./modules/members/routes";
 import type { MemberService } from "./modules/members/service";
 import { createResearchRouter, createSavedPaperRouter } from "./modules/research/routes";
@@ -41,6 +43,7 @@ export interface AppDependencies {
   memberService: MemberService;
   chatService: ChatService;
   researchService: ResearchService;
+  groundedAnswerService: GroundedAnswerService;
   semanticRetrievalService: SemanticRetrievalService;
   documentService: DocumentService;
   documentUploadMiddleware: import("express").RequestHandler;
@@ -56,6 +59,7 @@ export function createApp({
   memberService,
   chatService,
   researchService,
+  groundedAnswerService,
   semanticRetrievalService,
   documentService,
   documentUploadMiddleware,
@@ -95,6 +99,11 @@ export function createApp({
     "/api/v1/spaces/:spaceId/saved-papers",
     requireAuthentication,
     createSavedPaperRouter(researchService),
+  );
+  app.use(
+    "/api/v1/spaces/:spaceId/knowledge/ask",
+    requireAuthentication,
+    createGroundedAnswerRouter(groundedAnswerService),
   );
   app.use(
     "/api/v1/spaces/:spaceId/knowledge/retrieve",

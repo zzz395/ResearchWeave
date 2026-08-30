@@ -8,6 +8,7 @@ import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
 import { createDocumentUploadMiddleware } from "../../server/integrations/document-upload/middleware";
 import { createDocumentService } from "../../server/modules/documents/service";
+import { createGroundedAnswerService } from "../../server/modules/grounded-answer/service";
 import { UnconfiguredDocumentEmbeddingGenerator } from "../../server/modules/documents/document-embedding-generator";
 import { createMemberService } from "../../server/modules/members/service";
 import { createResearchService } from "../../server/modules/research/service";
@@ -104,6 +105,10 @@ export async function createRealtimeTestServer() {
     semanticRetrievalRepository,
     new UnconfiguredDocumentEmbeddingGenerator(),
   );
+  const groundedAnswerService = createGroundedAnswerService(
+    semanticRetrievalService,
+    semanticRetrievalRepository,
+  );
   const documentUploadMiddleware = createDocumentUploadMiddleware(documentStorage, logger);
   const app = createApp({
     environment: testEnvironment,
@@ -115,6 +120,7 @@ export async function createRealtimeTestServer() {
     memberService,
     chatService,
     researchService,
+    groundedAnswerService,
     semanticRetrievalService,
     documentService,
     documentUploadMiddleware,
