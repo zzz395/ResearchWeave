@@ -33,6 +33,8 @@ import { createDrizzlePaperRepository } from "./modules/research/paper-repositor
 import { createDrizzleSavedPaperRepository } from "./modules/research/saved-paper-repository";
 import { createDrizzlePaperSummaryRepository } from "./modules/research/summary-repository";
 import { createResearchService } from "./modules/research/service";
+import { createDrizzleSemanticRetrievalRepository } from "./modules/retrieval/repository";
+import { createSemanticRetrievalService } from "./modules/retrieval/service";
 import { createDrizzleSpaceRepository } from "./modules/spaces/repository";
 import { createSpaceService } from "./modules/spaces/service";
 import { attachRealtimeGateway } from "./realtime/gateway";
@@ -91,6 +93,10 @@ const documentEmbeddingGenerator: DocumentEmbeddingGenerator =
         apiKey: environment.LLM_API_KEY,
       })
     : new UnconfiguredDocumentEmbeddingGenerator();
+const semanticRetrievalService = createSemanticRetrievalService(
+  createDrizzleSemanticRetrievalRepository(database),
+  documentEmbeddingGenerator,
+);
 const documentIndexingWorker = new DocumentIndexingWorker({
   repository: documentRepository,
   storage: documentStorage,
@@ -109,6 +115,7 @@ const app = createApp({
   memberService,
   chatService,
   researchService,
+  semanticRetrievalService,
   documentService,
   documentUploadMiddleware,
 });
