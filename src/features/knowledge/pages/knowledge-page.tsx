@@ -12,6 +12,7 @@ import { useAuth } from "../../auth/auth-state";
 import { useSpaceLayout } from "../../spaces/components/space-layout-context";
 import { deleteDocument, listDocuments, reindexDocument } from "../api/documents";
 import { documentQueryKeys } from "../api/query-keys";
+import { AskKnowledge } from "../components/ask-knowledge";
 import { DocumentDetailDialog } from "../components/document-detail-dialog";
 import { DocumentList } from "../components/document-list";
 import { DocumentUploadDialog } from "../components/document-upload-dialog";
@@ -129,6 +130,8 @@ export function Component() {
       {reindexError ? (
         <Alert><strong>Indexing could not be queued.</strong><span>{reindexError.message}</span></Alert>
       ) : null}
+
+      <AskKnowledge key={space.id} onOpenSource={setSelectedDocumentId} spaceId={space.id} />
 
       <div className="rw-knowledge-summary" aria-label="Loaded document summary">
         <div><span>Total</span><strong>{summary.total}</strong><small>{documentsQuery.hasNextPage ? "loaded records" : "documents"}</small></div>

@@ -13,6 +13,7 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:phase6:postgres": "tsx scripts/phase6-postgres-smoke.ts",
+    "test:phase7a:postgres": "tsx scripts/phase7a-postgres-smoke.ts",
     "test:watch": "vitest",
     "build": "npm run clean && vite build && esbuild server/index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --sourcemap --outdir=dist/server",
     "start": "node dist/server/index.js",

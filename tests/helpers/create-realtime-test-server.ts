@@ -8,8 +8,11 @@ import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
 import { createDocumentUploadMiddleware } from "../../server/integrations/document-upload/middleware";
 import { createDocumentService } from "../../server/modules/documents/service";
+import { createGroundedAnswerService } from "../../server/modules/grounded-answer/service";
+import { UnconfiguredDocumentEmbeddingGenerator } from "../../server/modules/documents/document-embedding-generator";
 import { createMemberService } from "../../server/modules/members/service";
 import { createResearchService } from "../../server/modules/research/service";
+import { createSemanticRetrievalService } from "../../server/modules/retrieval/service";
 import { createSpaceService, type SpaceService } from "../../server/modules/spaces/service";
 import { attachRealtimeGateway } from "../../server/realtime/gateway";
 import { RealtimeHub } from "../../server/realtime/hub";
@@ -24,6 +27,7 @@ import {
   InMemoryPaperRepository,
   InMemoryPaperSummaryRepository,
   InMemorySavedPaperRepository,
+  InMemorySemanticRetrievalRepository,
   InMemorySpaceRepository,
 } from "./in-memory-repositories";
 
@@ -53,6 +57,10 @@ export async function createRealtimeTestServer() {
   );
   const summaryRepository = new InMemoryPaperSummaryRepository(paperRepository);
   const documentRepository = new InMemoryDocumentRepository(spaceRepository);
+  const semanticRetrievalRepository = new InMemorySemanticRetrievalRepository(
+    spaceRepository,
+    documentRepository,
+  );
   const documentStorage = new InMemoryDocumentStorage();
   const hub = new RealtimeHub();
   const authService = createAuthService(authRepository, {
@@ -93,6 +101,14 @@ export async function createRealtimeTestServer() {
   );
   const logger = pino({ level: "silent" });
   const documentService = createDocumentService(documentRepository, documentStorage, logger);
+  const semanticRetrievalService = createSemanticRetrievalService(
+    semanticRetrievalRepository,
+    new UnconfiguredDocumentEmbeddingGenerator(),
+  );
+  const groundedAnswerService = createGroundedAnswerService(
+    semanticRetrievalService,
+    semanticRetrievalRepository,
+  );
   const documentUploadMiddleware = createDocumentUploadMiddleware(documentStorage, logger);
   const app = createApp({
     environment: testEnvironment,
@@ -104,6 +120,8 @@ export async function createRealtimeTestServer() {
     memberService,
     chatService,
     researchService,
+    groundedAnswerService,
+    semanticRetrievalService,
     documentService,
     documentUploadMiddleware,
   });

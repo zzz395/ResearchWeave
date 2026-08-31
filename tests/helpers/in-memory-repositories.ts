@@ -67,6 +67,11 @@ import type {
   QueueDocumentReindexResult,
 } from "../../server/modules/documents/repository";
 import type { DocumentStorage } from "../../server/integrations/document-storage/storage";
+import type {
+  SemanticRetrievalRepository,
+  SemanticRetrievalRepositoryInput,
+  SemanticRetrievalRepositoryResult,
+} from "../../server/modules/retrieval/repository";
 import {
   createSummarySourceFingerprint,
   toPaperSummarySource,
@@ -776,6 +781,79 @@ export class InMemoryDocumentRepository implements DocumentRepository {
     this.documentChunks.set(input.documentId, workingChunks);
     this.documents.set(input.documentId, workingDocument);
     return Promise.resolve({ status: "activated" });
+  }
+}
+
+function cosineDistance(left: number[], right: number[]): number {
+  if (left.length !== right.length) return Number.NaN;
+  let dotProduct = 0;
+  let leftMagnitudeSquared = 0;
+  let rightMagnitudeSquared = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const leftValue = left[index];
+    const rightValue = right[index];
+    dotProduct += leftValue * rightValue;
+    leftMagnitudeSquared += leftValue * leftValue;
+    rightMagnitudeSquared += rightValue * rightValue;
+  }
+  const denominator = Math.sqrt(leftMagnitudeSquared) * Math.sqrt(rightMagnitudeSquared);
+  return denominator === 0 ? Number.NaN : 1 - dotProduct / denominator;
+}
+
+export class InMemorySemanticRetrievalRepository implements SemanticRetrievalRepository {
+  constructor(
+    private readonly spaces: InMemorySpaceRepository,
+    private readonly documents: InMemoryDocumentRepository,
+  ) {}
+
+  hasMembership(spaceId: string, actorId: string) {
+    return Promise.resolve(this.spaces.hasMembership(spaceId, actorId));
+  }
+
+  searchForMember(
+    input: SemanticRetrievalRepositoryInput,
+  ): Promise<SemanticRetrievalRepositoryResult> {
+    if (!this.spaces.hasMembership(input.spaceId, input.actorId)) {
+      return Promise.resolve({ status: "space_not_found" });
+    }
+    const activeDocuments = [...this.documents.documents.values()].filter(
+      (document) => document.spaceId === input.spaceId && document.indexedAt !== null,
+    );
+    if (activeDocuments.length === 0) {
+      return Promise.resolve({ status: "knowledge_not_indexed" });
+    }
+    if (
+      activeDocuments.some(
+        (document) =>
+          document.embeddingModel !== input.embeddingModel ||
+          document.embeddingDimensions !== input.embeddingDimensions,
+      )
+    ) {
+      return Promise.resolve({ status: "knowledge_embedding_incompatible" });
+    }
+    const records = activeDocuments
+      .flatMap((document) =>
+        (this.documents.documentChunks.get(document.id) ?? []).map((chunk) => ({
+          documentId: document.id,
+          originalFilename: document.originalFilename,
+          ordinal: chunk.ordinal,
+          content: chunk.content,
+          contentHash: chunk.contentHash,
+          pageNumber: chunk.pageNumber,
+          startOffset: chunk.startOffset,
+          endOffset: chunk.endOffset,
+          cosineDistance: cosineDistance(chunk.embedding, input.embedding),
+        })),
+      )
+      .filter((record) => Number.isFinite(record.cosineDistance))
+      .sort(
+        (left, right) =>
+          left.cosineDistance - right.cosineDistance ||
+          left.documentId.localeCompare(right.documentId) ||
+          left.ordinal - right.ordinal,
+      )
+      .slice(0, input.limit);
+    return Promise.resolve({ status: "ok", records });
   }
 }
 
