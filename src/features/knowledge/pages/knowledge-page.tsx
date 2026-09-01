@@ -10,15 +10,19 @@ import { Alert, ErrorPanel, LoadingLabel, PageLoading } from "../../../component
 import { ApiClientError } from "../../../services/api/client";
 import { useAuth } from "../../auth/auth-state";
 import { useSpaceLayout } from "../../spaces/components/space-layout-context";
-import { deleteDocument, listDocuments, reindexDocument } from "../api/documents";
+import { documentListQueryOptions } from "../api/document-list-query";
+import { deleteDocument, reindexDocument } from "../api/documents";
 import { documentQueryKeys } from "../api/query-keys";
 import { AskKnowledge } from "../components/ask-knowledge";
 import { DocumentDetailDialog } from "../components/document-detail-dialog";
 import { DocumentList } from "../components/document-list";
 import { DocumentUploadDialog } from "../components/document-upload-dialog";
-import { getDocumentSummary, shouldPollDocuments } from "../document-presentation";
-
-const DOCUMENT_PAGE_SIZE = 50;
+import {
+  getDocumentSummary,
+  isTrueZeroDocumentList,
+  shouldPollDocuments,
+} from "../document-presentation";
+import { getAskKnowledgeInstanceKey } from "../knowledge-page-state";
 
 export function Component() {
   const space = useSpaceLayout();
@@ -28,13 +32,7 @@ export function Component() {
   const [deleteTarget, setDeleteTarget] = useState<Document | null>(null);
   const queryKey = documentQueryKeys.list(space.id);
   const documentsQuery = useInfiniteQuery({
-    queryKey,
-    queryFn: ({ pageParam }) => listDocuments(space.id, {
-      cursor: pageParam,
-      limit: DOCUMENT_PAGE_SIZE,
-    }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    ...documentListQueryOptions(space.id),
     refetchInterval: (query) => {
       const documents = query.state.data?.pages.flatMap((page) => page.documents) ?? [];
       return shouldPollDocuments(documents) ? 2_000 : false;
@@ -51,6 +49,8 @@ export function Component() {
     () => documentsQuery.data?.pages.flatMap((page) => page.documents) ?? [],
     [documentsQuery.data],
   );
+  const firstDocumentPage = documentsQuery.data?.pages[0];
+  const isTrueZero = isTrueZeroDocumentList(documents, firstDocumentPage?.nextCursor);
   const summary = getDocumentSummary(documents);
 
   async function handleReindex(document: Document) {
@@ -131,50 +131,74 @@ export function Component() {
         <Alert><strong>Indexing could not be queued.</strong><span>{reindexError.message}</span></Alert>
       ) : null}
 
-      <AskKnowledge key={space.id} onOpenSource={setSelectedDocumentId} spaceId={space.id} />
-
-      <div className="rw-knowledge-summary" aria-label="Loaded document summary">
-        <div><span>Total</span><strong>{summary.total}</strong><small>{documentsQuery.hasNextPage ? "loaded records" : "documents"}</small></div>
-        <div><span>Indexed</span><strong>{summary.indexed}</strong><small>active indexes</small></div>
-        <div><span>Processing</span><strong>{summary.processing}</strong><small>queued or active</small></div>
-        <div><span>Failed</span><strong>{summary.failed}</strong><small>latest attempts</small></div>
-      </div>
-
-      <div className="rw-knowledge-list-heading">
-        <div><p className="rw-page-kicker">Source ledger</p><h3>Documents</h3></div>
-        <span>{documentsQuery.hasNextPage ? `${documents.length} loaded` : `${documents.length} total`}</span>
-      </div>
-
-      {documents.length === 0 ? (
-        <div className="rw-knowledge-empty">
-          <Database aria-hidden="true" size={28} />
-          <div><h3>No documents yet</h3><p>Upload a research source to begin building durable knowledge for this Space.</p></div>
+      {isTrueZero ? (
+        <section className="rw-knowledge-onboarding" aria-labelledby="knowledge-onboarding-heading">
+          <div className="rw-knowledge-onboarding__intro">
+            <Database aria-hidden="true" size={28} />
+            <div>
+              <p className="rw-page-kicker">Start with a source</p>
+              <h3 id="knowledge-onboarding-heading">Build grounded knowledge in three steps.</h3>
+              <p>Add and index a source before asking grounded questions.</p>
+            </div>
+          </div>
+          <ol>
+            <li><span>01</span><div><strong>Upload source</strong><p>Add a PDF, text, or Markdown research document.</p></div></li>
+            <li><span>02</span><div><strong>Wait for indexing</strong><p>ResearchWeave extracts, chunks, and prepares the active index.</p></div></li>
+            <li><span>03</span><div><strong>Ask grounded questions</strong><p>Answers use indexed Space documents and server-authoritative citations.</p></div></li>
+          </ol>
           <DocumentUploadDialog onUploaded={setNotice} spaceId={space.id} />
-        </div>
+        </section>
       ) : (
-        <DocumentList
-          currentUserId={user?.id}
-          documents={documents}
-          onDelete={(document) => { deleteMutation.reset(); setDeleteTarget(document); }}
-          onReindex={(document) => void handleReindex(document)}
-          onView={(document) => setSelectedDocumentId(document.id)}
-          reindexingId={reindexMutation.isPending ? (reindexMutation.variables ?? null) : null}
-          spaceRole={space.role}
-        />
-      )}
+        <>
+          <AskKnowledge
+            key={getAskKnowledgeInstanceKey(space.id)}
+            onOpenSource={setSelectedDocumentId}
+            spaceId={space.id}
+          />
 
-      {documentsQuery.hasNextPage ? (
-        <div className="rw-knowledge-load-more">
-          <Button
-            disabled={documentsQuery.isFetchingNextPage}
-            onClick={() => void documentsQuery.fetchNextPage()}
-            variant="secondary"
-          >
-            {documentsQuery.isFetchingNextPage ? <LoadingLabel>Loading documents</LoadingLabel> : "Load more documents"}
-          </Button>
-          <span>Summary counts reflect the currently loaded records.</span>
-        </div>
-      ) : null}
+          <div className="rw-knowledge-summary" aria-label="Loaded document summary">
+            <div><span>{documentsQuery.hasNextPage ? "Loaded" : "Documents"}</span><strong>{summary.total}</strong><small>{documentsQuery.hasNextPage ? "currently loaded records" : "all document records"}</small></div>
+            <div><span>Indexed</span><strong>{summary.indexed}</strong><small>active indexes in loaded records</small></div>
+            <div><span>Processing</span><strong>{summary.processing}</strong><small>queued or active in loaded records</small></div>
+            <div><span>Failed</span><strong>{summary.failed}</strong><small>latest attempts in loaded records</small></div>
+          </div>
+
+          <div className="rw-knowledge-list-heading">
+            <div><p className="rw-page-kicker">Source ledger</p><h3>Documents</h3></div>
+            <span>{documentsQuery.hasNextPage ? `${documents.length} loaded` : `${documents.length} total`}</span>
+          </div>
+
+          {documents.length === 0 ? (
+            <div className="rw-knowledge-empty">
+              <Database aria-hidden="true" size={28} />
+              <div><h3>No documents in this loaded page</h3><p>More source records may be available. This state does not determine whole-Space knowledge readiness.</p></div>
+            </div>
+          ) : (
+            <DocumentList
+              currentUserId={user?.id}
+              documents={documents}
+              onDelete={(document) => { deleteMutation.reset(); setDeleteTarget(document); }}
+              onReindex={(document) => void handleReindex(document)}
+              onView={(document) => setSelectedDocumentId(document.id)}
+              reindexingId={reindexMutation.isPending ? (reindexMutation.variables ?? null) : null}
+              spaceRole={space.role}
+            />
+          )}
+
+          {documentsQuery.hasNextPage ? (
+            <div className="rw-knowledge-load-more">
+              <Button
+                disabled={documentsQuery.isFetchingNextPage}
+                onClick={() => void documentsQuery.fetchNextPage()}
+                variant="secondary"
+              >
+                {documentsQuery.isFetchingNextPage ? <LoadingLabel>Loading documents</LoadingLabel> : "Load more documents"}
+              </Button>
+              <span>Summary counts reflect the currently loaded records.</span>
+            </div>
+          ) : null}
+        </>
+      )}
 
       <DocumentDetailDialog
         documentId={selectedDocumentId}

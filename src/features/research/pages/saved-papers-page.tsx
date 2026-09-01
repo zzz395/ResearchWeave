@@ -13,11 +13,16 @@ import { formatResearchDate } from "../../spaces/format-research-date";
 import { researchQueryKeys } from "../api/query-keys";
 import { listSavedPapers, removeSavedPaper } from "../api/research";
 import { ExternalPaperLink, PaperSummary } from "../components/paper-presentation";
+import {
+  getResearchWorkflowRoutes,
+  SAVED_PAPER_KNOWLEDGE_GUIDANCE,
+} from "../research-workflow";
 
 export function Component() {
   const space = useSpaceLayout();
   const { user } = useAuth();
   const queryKey = researchQueryKeys.savedPapers(space.id);
+  const workflowRoutes = getResearchWorkflowRoutes(space.id);
   const savedPapersQuery = useQuery({
     queryKey,
     queryFn: () => listSavedPapers(space.id),
@@ -58,6 +63,14 @@ export function Component() {
         <div><p className="rw-page-kicker">Space library</p><h2>Saved papers</h2></div>
         <span>{savedPapersQuery.data.length.toString().padStart(2, "0")}</span>
       </div>
+      <section className="rw-saved-paper-knowledge-bridge" aria-labelledby="saved-paper-knowledge-heading">
+        <div>
+          <p className="rw-page-kicker">From reference to grounded evidence</p>
+          <h3 id="saved-paper-knowledge-heading">Continue with the full source in Knowledge.</h3>
+          <p>{SAVED_PAPER_KNOWLEDGE_GUIDANCE}</p>
+        </div>
+        <Button asChild><Link to={workflowRoutes.knowledge}>Continue in Knowledge</Link></Button>
+      </section>
       {removeError ? (
         <Alert>
           <strong>{removeError.status === 403 ? "You cannot remove this paper." : "Paper could not be removed."}</strong>
@@ -80,7 +93,8 @@ export function Component() {
               <PaperSummary
                 actions={
                   <>
-                    <ExternalPaperLink href={savedPaper.paper.absUrl} />
+                    <ExternalPaperLink href={savedPaper.paper.absUrl} label="Open paper" />
+                    <ExternalPaperLink href={savedPaper.paper.pdfUrl} label="Open PDF" />
                     {canRemove ? (
                       <Button
                         disabled={removeMutation.isPending}

@@ -12,11 +12,17 @@ import { ApiClientError } from "../../../services/api/client";
 import { listSpaces } from "../../spaces/api/spaces";
 import { savePaperToSpace } from "../api/research";
 import { researchQueryKeys } from "../api/query-keys";
+import {
+  beginSavePaperWorkflow,
+  completeSavePaperWorkflow,
+  getResearchWorkflowRoutes,
+  type ResearchWorkflowSpace,
+} from "../research-workflow";
 
 export function SavePaperDialog({ paper }: { paper: PersistentResearchPaper }) {
   const [open, setOpen] = useState(false);
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
-  const [savedMessage, setSavedMessage] = useState("");
+  const [savedSpace, setSavedSpace] = useState<ResearchWorkflowSpace | null>(null);
   const spacesQuery = useQuery({
     queryKey: ["spaces"],
     queryFn: listSpaces,
@@ -29,7 +35,9 @@ export function SavePaperDialog({ paper }: { paper: PersistentResearchPaper }) {
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
     if (nextOpen) {
-      setSavedMessage("");
+      const initialState = beginSavePaperWorkflow();
+      setSelectedSpaceId(initialState.selectedSpaceId);
+      setSavedSpace(initialState.savedSpace);
       saveMutation.reset();
     }
   }
@@ -43,7 +51,7 @@ export function SavePaperDialog({ paper }: { paper: PersistentResearchPaper }) {
         queryKey: researchQueryKeys.savedPapers(space.id),
         exact: true,
       });
-      setSavedMessage(`Saved to ${space.name}.`);
+      setSavedSpace(completeSavePaperWorkflow(space));
       setOpen(false);
     } catch {
       // The dialog keeps the chosen Space available for a truthful retry.
@@ -51,6 +59,7 @@ export function SavePaperDialog({ paper }: { paper: PersistentResearchPaper }) {
   }
 
   const mutationError = saveMutation.error instanceof ApiClientError ? saveMutation.error : null;
+  const continuationRoutes = savedSpace ? getResearchWorkflowRoutes(savedSpace.id) : null;
 
   return (
     <div className="rw-save-paper-action">
@@ -122,7 +131,19 @@ export function SavePaperDialog({ paper }: { paper: PersistentResearchPaper }) {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-      {savedMessage ? <span className="rw-save-confirmation" role="status">{savedMessage}</span> : null}
+      {savedSpace && continuationRoutes ? (
+        <div className="rw-save-confirmation">
+          <p role="status">Saved to <strong>{savedSpace.name}</strong>.</p>
+          <div>
+            <Button asChild variant="secondary">
+              <Link to={continuationRoutes.savedPapers}>View Saved Papers</Link>
+            </Button>
+            <Button asChild>
+              <Link to={continuationRoutes.knowledge}>Continue in Knowledge</Link>
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { ErrorPanel, PageLoading } from "../../../components/ui/feedback";
 import { ApiClientError } from "../../../services/api/client";
 import { useRealtime } from "../../../services/realtime/realtime-context";
 import { getSpace } from "../api/spaces";
+import { getSpaceNavigationDestinations } from "../space-navigation";
 import { Breadcrumb, ContentSection, PageHeader } from "./space-page";
 import { retainSpaceLayoutSubscription } from "./space-layout-subscription";
 
@@ -46,12 +47,11 @@ export function Component() {
         title={space.name}
       />
       <nav aria-label="Research space views" className="rw-space-tabs">
-        <NavLink end to={`/spaces/${space.id}`}>Overview</NavLink>
-        <NavLink to={`/spaces/${space.id}/chat`}>Chat</NavLink>
-        <NavLink to={`/spaces/${space.id}/saved-papers`}>Saved Papers</NavLink>
-        <NavLink to={`/spaces/${space.id}/knowledge`}>Knowledge Base</NavLink>
-        <NavLink to={`/spaces/${space.id}/members`}>Members</NavLink>
-        {space.role === "owner" ? <NavLink to={`/spaces/${space.id}/settings`}>Settings</NavLink> : null}
+        {getSpaceNavigationDestinations(space.id, space.role).map((destination) => (
+          <NavLink end={destination.end} key={destination.to} to={destination.to}>
+            {destination.label}
+          </NavLink>
+        ))}
       </nav>
       <Outlet context={space} />
     </ContentSection>
