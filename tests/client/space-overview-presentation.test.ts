@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   getOverviewDocumentCountLabel,
+  isOverviewDocumentListEmpty,
   resolveOverviewCollection,
 } from "../../src/features/spaces/space-overview-presentation";
 
@@ -41,5 +42,11 @@ describe("Space Overview supporting data", () => {
   it("uses a complete document count only when pagination is exhausted", () => {
     expect(getOverviewDocumentCountLabel({ count: 1, nextCursor: null })).toBe("1 document");
     expect(getOverviewDocumentCountLabel({ count: 3, nextCursor: null })).toBe("3 documents");
+  });
+
+  it("does not claim the Space is empty while another document page exists", () => {
+    expect(isOverviewDocumentListEmpty({ count: 0, nextCursor: "next-page" })).toBe(false);
+    expect(isOverviewDocumentListEmpty({ count: 0, nextCursor: null })).toBe(true);
+    expect(isOverviewDocumentListEmpty({ count: 1, nextCursor: null })).toBe(false);
   });
 });

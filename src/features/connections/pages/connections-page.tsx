@@ -9,7 +9,7 @@ import {
 } from "../../../../shared/contracts/connections";
 import { queryClient } from "../../../app/query-client";
 import { Button } from "../../../components/ui/button";
-import { Alert, ErrorPanel, LoadingLabel, PageLoading } from "../../../components/ui/feedback";
+import { Alert, ErrorPanel, LoadingLabel, PageLoading, SectionHeader } from "../../../components/ui/feedback";
 import { InputField } from "../../../components/ui/form-field";
 import { useAuth } from "../../auth/auth-state";
 import { ContentSection, PageHeader } from "../../spaces/components/space-page";
@@ -102,12 +102,10 @@ export function Component() {
     <ContentSection>
       <PageHeader
         description="Connect by exact registered email. ResearchWeave does not expose a public user directory."
-        kicker="Collaboration directory"
         title="Connections"
       />
       <section className="rw-connection-request">
         <div>
-          <p className="rw-page-kicker">Private lookup</p>
           <h2>Request a connection</h2>
           <p>The recipient can accept or reject the request before they can be added to a space.</p>
         </div>
@@ -167,9 +165,11 @@ function ConnectionSection({
 }) {
   return (
     <section className="rw-ledger-section">
-      <div className="rw-ledger-section__heading">
-        <h2>{title}</h2><span>{connections.length.toString().padStart(2, "0")}</span>
-      </div>
+      <SectionHeader
+        className="rw-ledger-section__heading"
+        count={connections.length}
+        title={title}
+      />
       {connections.length === 0 ? <p className="rw-ledger-empty">{empty}</p> : connections.map((connection) => (
         <article className="rw-person-row" key={connection.id}>
           <span className="rw-avatar" aria-hidden="true">{connection.otherUser.displayName.slice(0, 2).toUpperCase()}</span>

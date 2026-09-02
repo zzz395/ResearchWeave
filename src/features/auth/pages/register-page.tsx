@@ -63,7 +63,6 @@ export function Component() {
           ) : null}
           <InputField
             autoComplete="name"
-            autoFocus
             error={fieldErrors.displayName}
             id="displayName"
             label="Display name"

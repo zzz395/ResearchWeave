@@ -71,7 +71,7 @@ export function SavePaperDialog({ paper }: { paper: PersistentResearchPaper }) {
         </Dialog.Trigger>
         <Dialog.Portal>
           <Dialog.Overlay className="rw-dialog-overlay" />
-          <Dialog.Content className="rw-dialog-card">
+          <Dialog.Content aria-modal="true" className="rw-dialog-card">
             <div className="rw-dialog-card__heading">
               <Dialog.Title>Save paper to a Space</Dialog.Title>
               <Dialog.Close className="rw-icon-button" aria-label="Close save dialog">

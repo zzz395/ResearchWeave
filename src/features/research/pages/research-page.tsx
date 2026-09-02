@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { researchSearchQuerySchema } from "../../../../shared/contracts/research";
 import { Button } from "../../../components/ui/button";
-import { ErrorPanel, LoadingLabel } from "../../../components/ui/feedback";
+import { EmptyState, ErrorPanel, QueryState, SectionHeader } from "../../../components/ui/feedback";
 import { ContentSection, PageHeader } from "../../spaces/components/space-page";
 import { researchQueryKeys } from "../api/query-keys";
 import { searchResearchPapers } from "../api/research";
@@ -14,6 +14,7 @@ import { SavePaperDialog } from "../components/save-paper-dialog";
 import { getResearchError } from "../research-errors";
 import {
   createResearchSearchParams,
+  getResearchPaginationScrollBehavior,
   isValidSubmittedQuery,
   parseResearchSearchParams,
   type ResearchSort,
@@ -70,7 +71,7 @@ function ResearchSearchForm({
           placeholder="e.g. retrieval augmented generation"
           value={draft}
         />
-        {fieldError ? <p className="rw-field__error" id="research-query-error">{fieldError}</p> : null}
+        {fieldError ? <p className="rw-field__error" id="research-query-error" role="alert">{fieldError}</p> : null}
       </div>
       <div className="rw-field">
         <div className="rw-field__label-row"><label htmlFor="research-sort">Sort by</label></div>
@@ -108,7 +109,11 @@ export function Component() {
 
   function handlePage(page: number) {
     setSearchParams(createResearchSearchParams({ ...urlState, page }));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    window.scrollTo({
+      top: 0,
+      behavior: getResearchPaginationScrollBehavior(prefersReducedMotion),
+    });
   }
 
   const results = searchQuery.data;
@@ -121,7 +126,6 @@ export function Component() {
     <ContentSection>
       <PageHeader
         description="Search arXiv, inspect durable paper records, and save useful work into your Research Spaces."
-        kicker="Academic discovery"
         title="Research"
       />
       <ResearchSearchForm
@@ -134,9 +138,7 @@ export function Component() {
 
       {!hasSubmittedQuery ? (
         <section className="rw-research-intro">
-          <span aria-hidden="true">arXiv</span>
           <div>
-            <p className="rw-page-kicker">Start with a question</p>
             <h2>Find the literature that moves your work forward.</h2>
             <p>Search by research topic, paper title, author name, or keywords. Results are fetched only when you submit.</p>
           </div>
@@ -144,7 +146,7 @@ export function Component() {
       ) : null}
 
       {hasSubmittedQuery && searchQuery.isPending ? (
-        <div className="rw-research-loading" aria-live="polite"><LoadingLabel>Searching arXiv</LoadingLabel></div>
+        <QueryState className="rw-research-loading" label="Searching arXiv" status="loading" />
       ) : null}
 
       {hasSubmittedQuery && searchQuery.error ? (
@@ -157,19 +159,19 @@ export function Component() {
       ) : null}
 
       {results && results.papers.length === 0 ? (
-        <section className="rw-research-empty">
-          <p className="rw-page-kicker">No matches</p>
+        <EmptyState className="rw-research-empty">
           <h2>No papers found for “{urlState.q}”</h2>
           <p>Try broader terms, another author name, or a different arXiv query.</p>
-        </section>
+        </EmptyState>
       ) : null}
 
       {results && results.papers.length > 0 ? (
         <section className="rw-research-results" aria-label="Research results">
-          <div className="rw-research-results__heading">
-            <div><p className="rw-page-kicker">Search results</p><h2>{urlState.q}</h2></div>
-            <span>{results.totalResults.toLocaleString()} papers</span>
-          </div>
+          <SectionHeader
+            className="rw-research-results__heading"
+            count={`${results.totalResults.toLocaleString()} papers`}
+            title={urlState.q}
+          />
           <div className="rw-paper-list">
             {results.papers.map((paper) => (
               <PaperSummary

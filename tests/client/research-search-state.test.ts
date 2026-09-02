@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createResearchSearchParams,
+  getResearchPaginationScrollBehavior,
   isValidSubmittedQuery,
   parseResearchSearchParams,
 } from "../../src/features/research/research-search-state";
@@ -30,5 +31,10 @@ describe("research search URL state", () => {
     expect(isValidSubmittedQuery(" ai ")).toBe(true);
     expect(isValidSubmittedQuery("x".repeat(200))).toBe(true);
     expect(isValidSubmittedQuery("x".repeat(201))).toBe(false);
+  });
+
+  it("respects reduced-motion preference for scripted pagination scrolling", () => {
+    expect(getResearchPaginationScrollBehavior(true)).toBe("auto");
+    expect(getResearchPaginationScrollBehavior(false)).toBe("smooth");
   });
 });

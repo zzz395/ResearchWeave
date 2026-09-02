@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import type { SpaceMember } from "../../../../shared/contracts/members";
 import { queryClient } from "../../../app/query-client";
 import { Button } from "../../../components/ui/button";
-import { Alert, ErrorPanel, LoadingLabel, PageLoading } from "../../../components/ui/feedback";
+import { Alert, ErrorPanel, LoadingLabel, PageLoading, SectionHeader } from "../../../components/ui/feedback";
 import { ApiClientError } from "../../../services/api/client";
 import { useRealtime } from "../../../services/realtime/realtime-context";
 import { useAuth } from "../../auth/auth-state";
@@ -86,10 +86,11 @@ export function Component() {
   return (
     <div className="rw-space-tab-panel rw-members-layout">
       <section className="rw-ledger-section">
-        <div className="rw-ledger-section__heading">
-          <div><p className="rw-page-kicker">Durable access</p><h2>Space members</h2></div>
-          <span>{membersQuery.data.length.toString().padStart(2, "0")}</span>
-        </div>
+        <SectionHeader
+          className="rw-ledger-section__heading"
+          count={`${membersQuery.data.length} members`}
+          title="Space members"
+        />
         {mutationError ? <Alert><strong>Membership action failed.</strong><span>{mutationError.message}</span></Alert> : null}
         {membersQuery.data.map((member) => (
           <article className="rw-person-row" key={member.user.id}>
@@ -112,7 +113,7 @@ export function Component() {
 
       {space.role === "owner" ? (
         <aside className="rw-member-admission">
-          <p className="rw-page-kicker">Owner controls</p>
+          <p className="rw-context-label">Owner controls</p>
           <h2>Add from connections</h2>
           <p>Only accepted connections can become members. Removing a connection later does not remove space access.</p>
           {connectionsQuery.isPending ? <LoadingLabel>Loading connections</LoadingLabel> : null}

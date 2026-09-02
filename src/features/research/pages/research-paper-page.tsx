@@ -18,6 +18,15 @@ interface ResearchLocationState {
   researchReturnSearch?: unknown;
 }
 
+export function PaperAbstract({ abstract }: { abstract: string }) {
+  return (
+    <section aria-labelledby="paper-abstract-heading">
+      <h2 id="paper-abstract-heading">Abstract</h2>
+      <p>{abstract}</p>
+    </section>
+  );
+}
+
 export function Component() {
   const { paperId = "" } = useParams();
   const location = useLocation();
@@ -69,7 +78,7 @@ export function Component() {
           <h1>{paper.title}</h1>
           <p className="rw-paper-detail__authors"><AuthorLine authors={paper.authors} /></p>
           <CategoryList categories={paper.categories} primaryCategory={paper.primaryCategory} />
-          <div className="rw-paper-detail__actions">
+          <div className="rw-action-group rw-paper-detail__actions">
             <SavePaperDialog paper={paper} />
             <ExternalPaperLink href={paper.absUrl} />
             <Button asChild variant="secondary">
@@ -78,12 +87,9 @@ export function Component() {
           </div>
         </header>
         <div className="rw-paper-detail__body">
-          <section>
-            <p className="rw-page-kicker">Abstract</p>
-            <p>{paper.abstract}</p>
-          </section>
+          <PaperAbstract abstract={paper.abstract} />
           <aside>
-            <p className="rw-page-kicker">Paper record</p>
+            <h2>Paper record</h2>
             <dl>
               <div><dt>Published</dt><dd><time dateTime={paper.publishedAt}>{formatResearchDate(paper.publishedAt)}</time></dd></div>
               <div><dt>Updated</dt><dd><time dateTime={paper.updatedAt}>{formatResearchDate(paper.updatedAt)}</time></dd></div>

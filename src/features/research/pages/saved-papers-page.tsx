@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import type { SavedPaper } from "../../../../shared/contracts/research";
 import { queryClient } from "../../../app/query-client";
 import { Button } from "../../../components/ui/button";
-import { Alert, ErrorPanel, PageLoading } from "../../../components/ui/feedback";
+import { Alert, EmptyState, ErrorPanel, PageLoading, SectionHeader } from "../../../components/ui/feedback";
 import { ApiClientError } from "../../../services/api/client";
 import { useAuth } from "../../auth/auth-state";
 import { useSpaceLayout } from "../../spaces/components/space-layout-context";
@@ -59,13 +59,13 @@ export function Component() {
 
   return (
     <section className="rw-space-tab-panel rw-saved-papers">
-      <div className="rw-saved-papers__heading">
-        <div><p className="rw-page-kicker">Space library</p><h2>Saved papers</h2></div>
-        <span>{savedPapersQuery.data.length.toString().padStart(2, "0")}</span>
-      </div>
+      <SectionHeader
+        className="rw-saved-papers__heading"
+        count={`${savedPapersQuery.data.length} saved`}
+        title="Saved papers"
+      />
       <section className="rw-saved-paper-knowledge-bridge" aria-labelledby="saved-paper-knowledge-heading">
         <div>
-          <p className="rw-page-kicker">From reference to grounded evidence</p>
           <h3 id="saved-paper-knowledge-heading">Continue with the full source in Knowledge.</h3>
           <p>{SAVED_PAPER_KNOWLEDGE_GUIDANCE}</p>
         </div>
@@ -78,12 +78,11 @@ export function Component() {
         </Alert>
       ) : null}
       {savedPapersQuery.data.length === 0 ? (
-        <div className="rw-saved-papers__empty">
-          <p className="rw-page-kicker">Nothing saved yet</p>
+        <EmptyState className="rw-saved-papers__empty">
           <h3>Build a focused reading list for this Space.</h3>
           <p>Discover papers in Research, then save the most useful records here.</p>
           <Button asChild><Link to="/research">Search Research</Link></Button>
-        </div>
+        </EmptyState>
       ) : (
         <div className="rw-paper-list">
           {savedPapersQuery.data.map((savedPaper) => {

@@ -28,3 +28,13 @@ export function getOverviewDocumentCountLabel({
     ? `${count} ${count === 1 ? "document" : "documents"}`
     : `${count} loaded`;
 }
+
+export function isOverviewDocumentListEmpty({
+  count,
+  nextCursor,
+}: {
+  count: number;
+  nextCursor: string | null;
+}): boolean {
+  return count === 0 && nextCursor === null;
+}

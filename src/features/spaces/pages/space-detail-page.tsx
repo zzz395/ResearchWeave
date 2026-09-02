@@ -3,7 +3,7 @@ import { ArrowRight, BookOpen, Database, MessageSquare, UsersRound } from "lucid
 import { Link } from "react-router-dom";
 
 import { Button } from "../../../components/ui/button";
-import { LoadingLabel } from "../../../components/ui/feedback";
+import { QueryState, SectionHeader } from "../../../components/ui/feedback";
 import { documentListQueryOptions } from "../../knowledge/api/document-list-query";
 import { getDocumentStatusPresentation } from "../../knowledge/document-presentation";
 import { listMembers } from "../../members/api/members";
@@ -13,6 +13,7 @@ import { useSpaceLayout } from "../components/space-layout-context";
 import { formatResearchDate } from "../format-research-date";
 import {
   getOverviewDocumentCountLabel,
+  isOverviewDocumentListEmpty,
   resolveOverviewCollection,
   type OverviewCollectionState,
 } from "../space-overview-presentation";
@@ -27,14 +28,16 @@ function SupportingQueryState({
   onRetry: () => void;
 }) {
   if (state.status === "loading") {
-    return <div className="rw-overview-query-state"><LoadingLabel>Loading {label}</LoadingLabel></div>;
+    return <QueryState className="rw-overview-query-state" label={`Loading ${label}`} status="loading" />;
   }
   if (state.status === "error") {
     return (
-      <div className="rw-overview-query-state rw-overview-query-state--error" role="alert">
-        <p>{label} could not be loaded.</p>
-        <button className="rw-text-action" onClick={onRetry} type="button">Try again</button>
-      </div>
+      <QueryState
+        className="rw-overview-query-state"
+        label={`${label} could not be loaded.`}
+        onRetry={onRetry}
+        status="error"
+      />
     );
   }
   return null;
@@ -68,16 +71,22 @@ export function Component() {
     isError: documentsQuery.isError,
     isPending: documentsQuery.isPending,
   });
+  const documentsAreEmpty = documentsState.status === "ready" && firstDocumentPage
+    ? isOverviewDocumentListEmpty({
+        count: documentsState.items.length,
+        nextCursor: firstDocumentPage.nextCursor,
+      })
+    : false;
 
   return (
     <div className="rw-space-tab-panel rw-space-overview">
       <section className="rw-overview-continue" aria-labelledby="continue-work-heading">
         <div>
-          <p className="rw-page-kicker">Continue your work</p>
+          <p className="rw-context-label">Continue your work</p>
           <h2 id="continue-work-heading">Move from discovery to shared knowledge.</h2>
           <p>Return to the sources, grounded questions, and collaborators that make this Space useful.</p>
         </div>
-        <div className="rw-overview-continue__actions">
+        <div className="rw-action-group rw-overview-continue__actions">
           <Button asChild><Link to={`/spaces/${space.id}/knowledge`}><Database aria-hidden="true" size={16} />Ask Knowledge</Link></Button>
           <Button asChild variant="secondary"><Link to={`/spaces/${space.id}/saved-papers`}><BookOpen aria-hidden="true" size={16} />Saved Papers</Link></Button>
           <Button asChild variant="secondary"><Link to={`/spaces/${space.id}/chat`}><MessageSquare aria-hidden="true" size={16} />Open Chat</Link></Button>
@@ -87,7 +96,7 @@ export function Component() {
       <div className="rw-overview-source-grid">
         <section className="rw-overview-section" aria-labelledby="overview-research-heading">
           <header>
-            <div><p className="rw-page-kicker">Research sources</p><h2 id="overview-research-heading">Saved papers</h2></div>
+            <h2 id="overview-research-heading">Saved papers</h2>
             {savedPapersState.status === "ready" ? <span>{savedPapersState.items.length} saved</span> : null}
           </header>
           <SupportingQueryState
@@ -114,7 +123,7 @@ export function Component() {
 
         <section className="rw-overview-section" aria-labelledby="overview-knowledge-heading">
           <header>
-            <div><p className="rw-page-kicker">Knowledge sources</p><h2 id="overview-knowledge-heading">Documents</h2></div>
+            <h2 id="overview-knowledge-heading">Documents</h2>
             {documentsState.status === "ready" && firstDocumentPage ? (
               <span>{getOverviewDocumentCountLabel({ count: documentsState.items.length, nextCursor: firstDocumentPage.nextCursor })}</span>
             ) : null}
@@ -125,8 +134,10 @@ export function Component() {
             state={documentsState}
           />
           {documentsState.status === "ready" ? (
-            documentsState.items.length === 0 ? (
+            documentsAreEmpty ? (
               <p className="rw-overview-empty-copy">No documents yet. Upload a source in Knowledge to begin indexing grounded evidence.</p>
+            ) : documentsState.items.length === 0 ? (
+              <p className="rw-overview-empty-copy">No documents are shown in this loaded page. More source records are available.</p>
             ) : (
               <ol className="rw-overview-source-list">
                 {documentsState.items.slice(0, 3).map((document) => (
@@ -144,7 +155,7 @@ export function Component() {
 
       <section className="rw-overview-collaboration" aria-labelledby="overview-collaboration-heading">
         <div>
-          <p className="rw-page-kicker">Collaboration</p>
+          <p className="rw-context-label">Collaboration</p>
           <h2 id="overview-collaboration-heading">Work with the people in this Space.</h2>
           {membersState.status === "ready" ? (
             <p>{membersState.items.length} {membersState.items.length === 1 ? "member has" : "members have"} durable access. Presence remains available in Chat and Members.</p>
@@ -155,17 +166,19 @@ export function Component() {
             state={membersState}
           />
         </div>
-        <div>
+        <div className="rw-action-group">
           <Button asChild variant="secondary"><Link to={`/spaces/${space.id}/members`}><UsersRound aria-hidden="true" size={16} />View Members</Link></Button>
           <Button asChild variant="secondary"><Link to={`/spaces/${space.id}/chat`}><MessageSquare aria-hidden="true" size={16} />Open Chat</Link></Button>
         </div>
       </section>
 
       <section className="rw-overview-details" aria-labelledby="space-details-heading">
-        <div className="rw-overview-details__heading">
-          <div><p className="rw-page-kicker">Space record</p><h2 id="space-details-heading">Details</h2></div>
-          <span className="rw-role-badge">{space.role}</span>
-        </div>
+        <SectionHeader
+          action={<span className="rw-role-badge">{space.role}</span>}
+          className="rw-overview-details__heading"
+          headingId="space-details-heading"
+          title="Details"
+        />
         <dl className="rw-definition-grid">
           <div><dt>Your role</dt><dd>{space.role === "owner" ? "Owner" : "Member"}</dd></div>
           <div><dt>Created</dt><dd><time dateTime={space.createdAt}>{formatResearchDate(space.createdAt)}</time></dd></div>
