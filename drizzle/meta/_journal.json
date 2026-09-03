@@ -43,6 +43,13 @@
       "when": 1787916735033,
       "tag": "0005_ambitious_killer_shrike",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788413789483,
+      "tag": "0006_open_the_hunter",
+      "breakpoints": true
     }
   ]
 }

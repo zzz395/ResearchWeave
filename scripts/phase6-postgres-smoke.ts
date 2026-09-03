@@ -151,7 +151,7 @@ async function runMigrationsAndSchemaSmoke(): Promise<void> {
   const [migrationCount] = await raw<[{ count: number }]>`
     select count(*)::int as count from drizzle.__drizzle_migrations
   `;
-  assert.equal(migrationCount.count, 6);
+  assert.equal(migrationCount.count, 7);
   pass("migrations");
 
   const [schemaState] = await raw<[{
