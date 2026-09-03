@@ -30,6 +30,20 @@ export interface GroundedAnswerService {
     actorId: string,
     input: AskKnowledgeRequest,
   ): Promise<GroundedAnswerResponse>;
+  answerWithSources(
+    spaceId: string,
+    actorId: string,
+    input: AskKnowledgeRequest,
+  ): Promise<GroundedAnswerWithSourcesResult>;
+}
+
+export interface GroundedAnswerSourceSnapshot extends GroundedAnswerCitation {
+  content: string;
+}
+
+export interface GroundedAnswerWithSourcesResult {
+  response: GroundedAnswerResponse;
+  sources: GroundedAnswerSourceSnapshot[];
 }
 
 const generatorErrorMap: Record<
@@ -97,6 +111,16 @@ function citationFor(sourceId: string, source: SemanticRetrievalResult): Grounde
   };
 }
 
+function sourceSnapshotFor(
+  sourceId: string,
+  source: SemanticRetrievalResult,
+): GroundedAnswerSourceSnapshot {
+  return {
+    ...citationFor(sourceId, source),
+    content: source.content,
+  };
+}
+
 export function createGroundedAnswerService(
   retrievalService: SemanticRetrievalService,
   membershipChecker: GroundedAnswerMembershipChecker,
@@ -108,83 +132,107 @@ export function createGroundedAnswerService(
     }
   }
 
+  async function answerWithSources(
+    spaceId: string,
+    actorId: string,
+    input: AskKnowledgeRequest,
+  ): Promise<GroundedAnswerWithSourcesResult> {
+    const retrieval = await retrievalService.retrieve(spaceId, actorId, {
+      query: input.query,
+      limit: RETRIEVAL_LIMIT,
+    });
+
+    if (retrieval.results.length === 0) {
+      await requireCurrentMembership(spaceId, actorId);
+      return {
+        response: {
+          status: "insufficient_context",
+          answer: INSUFFICIENT_CONTEXT_ANSWER,
+          citations: [],
+        },
+        sources: [],
+      };
+    }
+
+    if (!generator) {
+      throw new AppError(
+        503,
+        "answer_generation_unavailable",
+        "Answer generation is currently unavailable.",
+      );
+    }
+
+    const sourceMap = new Map<string, SemanticRetrievalResult>();
+    const sources = retrieval.results.map((result, index) => {
+      const sourceId = `S${index + 1}`;
+      sourceMap.set(sourceId, result);
+      return {
+        sourceId,
+        content: result.content,
+        originalFilename: result.originalFilename,
+        pageNumber: result.pageNumber,
+        ordinal: result.ordinal,
+      };
+    });
+
+    let generated: unknown;
+    try {
+      generated = await generator.generate({ question: input.query, sources });
+    } catch (error: unknown) {
+      if (!isGroundedAnswerGeneratorError(error)) throw error;
+      const mapped = generatorErrorMap[error.code];
+      throw new AppError(mapped.status, mapped.code, mapped.message);
+    }
+
+    const parsed = groundedAnswerGenerationResultSchema.safeParse(generated);
+    if (!parsed.success) throw invalidAnswerResponse();
+    const markers = extractUniqueSourceMarkers(parsed.data.answer);
+
+    if (parsed.data.status === "insufficient_context") {
+      if (markers.length > 0) throw invalidAnswerResponse();
+      await requireCurrentMembership(spaceId, actorId);
+      return {
+        response: {
+          status: "insufficient_context",
+          answer: INSUFFICIENT_CONTEXT_ANSWER,
+          citations: [],
+        },
+        sources: [],
+      };
+    }
+
+    if (
+      markers.length === 0 ||
+      markers.length !== parsed.data.sourceIds.length ||
+      markers.some((sourceId, index) => sourceId !== parsed.data.sourceIds[index]) ||
+      parsed.data.sourceIds.some((sourceId) => !sourceMap.has(sourceId))
+    ) {
+      throw invalidAnswerResponse();
+    }
+
+    const citedSourceRecords = parsed.data.sourceIds.map((sourceId) => {
+      const source = sourceMap.get(sourceId);
+      if (!source) throw invalidAnswerResponse();
+      return { sourceId, source };
+    });
+    const citations = citedSourceRecords.map(({ sourceId, source }) =>
+      citationFor(sourceId, source),
+    );
+    const citedSources = citedSourceRecords.map(({ sourceId, source }) =>
+      sourceSnapshotFor(sourceId, source),
+    );
+
+    await requireCurrentMembership(spaceId, actorId);
+    return {
+      response: { status: "answered", answer: parsed.data.answer, citations },
+      sources: citedSources,
+    };
+  }
+
   return {
     async answer(spaceId, actorId, input) {
-      const retrieval = await retrievalService.retrieve(spaceId, actorId, {
-        query: input.query,
-        limit: RETRIEVAL_LIMIT,
-      });
-
-      if (retrieval.results.length === 0) {
-        await requireCurrentMembership(spaceId, actorId);
-        return {
-          status: "insufficient_context",
-          answer: INSUFFICIENT_CONTEXT_ANSWER,
-          citations: [],
-        };
-      }
-
-      if (!generator) {
-        throw new AppError(
-          503,
-          "answer_generation_unavailable",
-          "Answer generation is currently unavailable.",
-        );
-      }
-
-      const sourceMap = new Map<string, SemanticRetrievalResult>();
-      const sources = retrieval.results.map((result, index) => {
-        const sourceId = `S${index + 1}`;
-        sourceMap.set(sourceId, result);
-        return {
-          sourceId,
-          content: result.content,
-          originalFilename: result.originalFilename,
-          pageNumber: result.pageNumber,
-          ordinal: result.ordinal,
-        };
-      });
-
-      let generated: unknown;
-      try {
-        generated = await generator.generate({ question: input.query, sources });
-      } catch (error: unknown) {
-        if (!isGroundedAnswerGeneratorError(error)) throw error;
-        const mapped = generatorErrorMap[error.code];
-        throw new AppError(mapped.status, mapped.code, mapped.message);
-      }
-
-      const parsed = groundedAnswerGenerationResultSchema.safeParse(generated);
-      if (!parsed.success) throw invalidAnswerResponse();
-      const markers = extractUniqueSourceMarkers(parsed.data.answer);
-
-      if (parsed.data.status === "insufficient_context") {
-        if (markers.length > 0) throw invalidAnswerResponse();
-        await requireCurrentMembership(spaceId, actorId);
-        return {
-          status: "insufficient_context",
-          answer: INSUFFICIENT_CONTEXT_ANSWER,
-          citations: [],
-        };
-      }
-
-      if (
-        markers.length === 0 ||
-        markers.length !== parsed.data.sourceIds.length ||
-        markers.some((sourceId, index) => sourceId !== parsed.data.sourceIds[index]) ||
-        parsed.data.sourceIds.some((sourceId) => !sourceMap.has(sourceId))
-      ) {
-        throw invalidAnswerResponse();
-      }
-
-      const citations = parsed.data.sourceIds.map((sourceId) => {
-        const source = sourceMap.get(sourceId);
-        if (!source) throw invalidAnswerResponse();
-        return citationFor(sourceId, source);
-      });
-
-      await requireCurrentMembership(spaceId, actorId);
-      return { status: "answered", answer: parsed.data.answer, citations };
+      return (await answerWithSources(spaceId, actorId, input)).response;
     },
+    answerWithSources,
   };
 }
