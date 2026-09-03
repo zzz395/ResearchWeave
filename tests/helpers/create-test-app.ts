@@ -3,6 +3,7 @@ import pino, { type Logger } from "pino";
 import { createApp } from "../../server/app";
 import type { Environment } from "../../server/config/env";
 import { createAuthService } from "../../server/modules/auth/service";
+import { createAgentService } from "../../server/modules/agents/service";
 import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
 import {
@@ -36,6 +37,7 @@ import {
   InMemorySemanticRetrievalRepository,
   InMemorySpaceRepository,
 } from "./in-memory-repositories";
+import { InMemoryAgentRepository } from "./in-memory-agent-repository";
 import type { ResearchPaperSearchResult } from "../../shared/contracts/research";
 
 export const testEnvironment: Environment = {
@@ -85,6 +87,11 @@ export function createTestApp(
     documentRepository,
   );
   const authService = createAuthService(authRepository);
+  const agentRepository = new InMemoryAgentRepository(spaceRepository);
+  const agentService = createAgentService(agentRepository, {
+    ready: true,
+    providerModel: "test-agent-model",
+  });
   const spaceService = createSpaceService(spaceRepository);
   const connectionService = createConnectionService(connectionRepository);
   const memberService = createMemberService(memberRepository, spaceRepository, connectionRepository);
@@ -116,6 +123,7 @@ export function createTestApp(
     logger,
     checkDatabase,
     authService,
+    agentService,
     spaceService,
     connectionService,
     memberService,
@@ -130,6 +138,8 @@ export function createTestApp(
   return {
     app,
     authRepository,
+    agentRepository,
+    agentService,
     spaceRepository,
     connectionRepository,
     memberRepository,

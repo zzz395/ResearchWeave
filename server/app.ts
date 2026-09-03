@@ -14,6 +14,13 @@ import { createRequestLogger } from "./middleware/request-logger";
 import { createSessionMiddleware, requireAuthentication } from "./modules/auth/middleware";
 import { createAuthRouter } from "./modules/auth/routes";
 import type { AuthService } from "./modules/auth/service";
+import {
+  createAgentDefinitionRouter,
+  createAgentRunRouter,
+  createAgentTaskRouter,
+  createSpaceAgentTaskRouter,
+} from "./modules/agents/routes";
+import type { AgentService } from "./modules/agents/service";
 import { createChatHistoryRouter } from "./modules/chat/routes";
 import type { ChatService } from "./modules/chat/service";
 import { createConnectionRouter } from "./modules/connections/routes";
@@ -38,6 +45,7 @@ export interface AppDependencies {
   logger: Logger;
   checkDatabase: DatabaseHealthCheck;
   authService: AuthService;
+  agentService: AgentService;
   spaceService: SpaceService;
   connectionService: ConnectionService;
   memberService: MemberService;
@@ -54,6 +62,7 @@ export function createApp({
   logger,
   checkDatabase,
   authService,
+  agentService,
   spaceService,
   connectionService,
   memberService,
@@ -84,7 +93,15 @@ export function createApp({
   app.use("/api/v1", createOriginGuard(environment));
   app.use(createSessionMiddleware(authService, environment));
   app.use("/api/v1/auth", createAuthRouter({ authService, environment }));
+  app.use("/api/v1/agents", requireAuthentication, createAgentDefinitionRouter(agentService));
+  app.use("/api/v1/agent-tasks", requireAuthentication, createAgentTaskRouter(agentService));
+  app.use("/api/v1/agent-runs", requireAuthentication, createAgentRunRouter(agentService));
   app.use("/api/v1/connections", requireAuthentication, createConnectionRouter(connectionService));
+  app.use(
+    "/api/v1/spaces/:spaceId/agent-tasks",
+    requireAuthentication,
+    createSpaceAgentTaskRouter(agentService),
+  );
   app.use(
     "/api/v1/spaces/:spaceId/members",
     requireAuthentication,

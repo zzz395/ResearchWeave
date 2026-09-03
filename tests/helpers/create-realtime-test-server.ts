@@ -4,6 +4,7 @@ import pino from "pino";
 
 import { createApp } from "../../server/app";
 import { createAuthService } from "../../server/modules/auth/service";
+import { createAgentService } from "../../server/modules/agents/service";
 import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
 import { createDocumentUploadMiddleware } from "../../server/integrations/document-upload/middleware";
@@ -30,6 +31,7 @@ import {
   InMemorySemanticRetrievalRepository,
   InMemorySpaceRepository,
 } from "./in-memory-repositories";
+import { InMemoryAgentRepository } from "./in-memory-agent-repository";
 
 interface Deferred {
   promise: Promise<void>;
@@ -65,6 +67,10 @@ export async function createRealtimeTestServer() {
   const hub = new RealtimeHub();
   const authService = createAuthService(authRepository, {
     sessionEnded: (tokenHash) => hub.closeSession(tokenHash),
+  });
+  const agentService = createAgentService(new InMemoryAgentRepository(spaceRepository), {
+    ready: true,
+    providerModel: "test-agent-model",
   });
   const spaceService = createSpaceService(spaceRepository, {
     spaceDeleted: (spaceId) => hub.revokeSpace(spaceId),
@@ -115,6 +121,7 @@ export async function createRealtimeTestServer() {
     logger,
     checkDatabase: () => Promise.resolve(),
     authService,
+    agentService,
     spaceService,
     connectionService,
     memberService,
