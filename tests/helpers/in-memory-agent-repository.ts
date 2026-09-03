@@ -221,6 +221,9 @@ export class InMemoryAgentRepository implements AgentRepository {
     );
   };
 
+  readExecutionState: AgentRepository["readExecutionState"] = () =>
+    this.unsupportedWorkerOperation();
+
   cancelRun: AgentRepository["cancelRun"] = (runId, actorUserId, now) => {
     const run = this.runs.get(runId);
     if (!run || !this.spaces.hasMembership(run.spaceId, actorUserId)) {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createAgentService } from "../../server/modules/agents/service";
+import {
+  createAgentService,
+  type AgentRuntimeState,
+} from "../../server/modules/agents/service";
 import type { ResearchSpaceRecord } from "../../server/db/schema";
 import {
   InMemoryAgentRepository,
@@ -14,7 +17,7 @@ const SPACE_ID = "20000000-0000-4000-8000-000000000001";
 const REQUEST_ID = "30000000-0000-4000-8000-000000000001";
 
 function harness(
-  runtime: { ready: false } | { ready: true; providerModel: string } = {
+  runtime: AgentRuntimeState = {
     ready: true,
     providerModel: "test-model",
   },
@@ -32,7 +35,11 @@ function harness(
   spaces.spaces.set(space.id, space);
   spaces.addMember(space.id, ACTOR_ID, "owner");
   const repository = new InMemoryAgentRepository(spaces);
-  return { spaces, repository, service: createAgentService(repository, runtime) };
+  return {
+    spaces,
+    repository,
+    service: createAgentService(repository, { getSnapshot: () => runtime }),
+  };
 }
 
 describe("Agent service", () => {
@@ -57,7 +64,9 @@ describe("Agent service", () => {
   });
 
   it("replays an existing task before applying current runtime or definition availability", async () => {
-    const { repository, service } = harness();
+    const { repository } = harness();
+    let runtime: AgentRuntimeState = { ready: true, providerModel: "test-model" };
+    const service = createAgentService(repository, { getSnapshot: () => runtime });
     const input = {
       agentId: TEST_AGENT_ID,
       prompt: "Replay after configuration change",
@@ -65,11 +74,8 @@ describe("Agent service", () => {
     };
     const created = await service.createTask(SPACE_ID, ACTOR_ID, input);
 
-    const unavailableReplay = await createAgentService(repository, { ready: false }).createTask(
-      SPACE_ID,
-      ACTOR_ID,
-      input,
-    );
+    runtime = { ready: false, reason: "runtime_unavailable" };
+    const unavailableReplay = await service.createTask(SPACE_ID, ACTOR_ID, input);
     expect(unavailableReplay).toMatchObject({
       created: false,
       task: { id: created.task.id },
@@ -100,7 +106,7 @@ describe("Agent service", () => {
   });
 
   it("reports definition availability and blocks unavailable or disabled submissions", async () => {
-    const unavailable = harness({ ready: false });
+    const unavailable = harness({ ready: false, reason: "provider_unconfigured" });
     expect((await unavailable.service.listDefinitions())[0]?.availability).toEqual({
       available: false,
       reason: "provider_unconfigured",
@@ -113,6 +119,20 @@ describe("Agent service", () => {
       }),
     ).rejects.toMatchObject({ statusCode: 503, code: "agent_runtime_unavailable" });
     expect(unavailable.repository.tasks.size).toBe(0);
+
+    const runtimeUnavailable = harness({ ready: false, reason: "runtime_unavailable" });
+    expect((await runtimeUnavailable.service.getDefinition(TEST_AGENT_ID)).availability).toEqual({
+      available: false,
+      reason: "runtime_unavailable",
+    });
+    await expect(
+      runtimeUnavailable.service.createTask(SPACE_ID, ACTOR_ID, {
+        agentId: TEST_AGENT_ID,
+        prompt: "Runtime wiring is not available",
+        clientRequestId: REQUEST_ID,
+      }),
+    ).rejects.toMatchObject({ statusCode: 503, code: "agent_runtime_unavailable" });
+    expect(runtimeUnavailable.repository.tasks.size).toBe(0);
 
     const disabled = harness();
     const bundle = disabled.repository.definitions.get(TEST_AGENT_ID);
@@ -131,6 +151,46 @@ describe("Agent service", () => {
         clientRequestId: REQUEST_ID,
       }),
     ).rejects.toMatchObject({ statusCode: 409, code: "agent_disabled" });
+  });
+
+  it("reads one current runtime snapshot for each readiness-sensitive operation", async () => {
+    const { repository } = harness();
+    let state: AgentRuntimeState = { ready: false, reason: "provider_unconfigured" };
+    let snapshotReads = 0;
+    const service = createAgentService(repository, {
+      getSnapshot() {
+        snapshotReads += 1;
+        return state;
+      },
+    });
+
+    expect((await service.listDefinitions())[0]?.availability.reason).toBe(
+      "provider_unconfigured",
+    );
+    expect(snapshotReads).toBe(1);
+
+    state = { ready: false, reason: "runtime_unavailable" };
+    expect((await service.getDefinition(TEST_AGENT_ID)).availability.reason).toBe(
+      "runtime_unavailable",
+    );
+    expect(snapshotReads).toBe(2);
+
+    state = { ready: true, providerModel: "replacement-model" };
+    const created = await service.createTask(SPACE_ID, ACTOR_ID, {
+      agentId: TEST_AGENT_ID,
+      prompt: "Use the current readiness snapshot",
+      clientRequestId: REQUEST_ID,
+    });
+    expect(snapshotReads).toBe(3);
+    expect(repository.runs.get(created.run.id)?.providerModel).toBe("replacement-model");
+
+    await service.cancelRun(created.run.id, ACTOR_ID);
+    state = { ready: true, providerModel: "replacement-retry-model" };
+    const retry = await service.retryTask(created.task.id, ACTOR_ID, {
+      clientRequestId: "30000000-0000-4000-8000-000000000004",
+    });
+    expect(snapshotReads).toBe(4);
+    expect(repository.runs.get(retry.run.id)?.providerModel).toBe("replacement-retry-model");
   });
 
   it("uses canonical cursor pagination and rejects malformed encodings", async () => {
@@ -290,7 +350,9 @@ describe("Agent service", () => {
   });
 
   it("replays an existing retry before applying current runtime or definition availability", async () => {
-    const { repository, service } = harness();
+    const { repository } = harness();
+    let runtime: AgentRuntimeState = { ready: true, providerModel: "test-model" };
+    const service = createAgentService(repository, { getSnapshot: () => runtime });
     const created = await service.createTask(SPACE_ID, ACTOR_ID, {
       agentId: TEST_AGENT_ID,
       prompt: "Retry replay",
@@ -306,11 +368,8 @@ describe("Agent service", () => {
       ...bundle,
       definition: { ...bundle.definition, enabled: false },
     });
-    const replay = await createAgentService(repository, { ready: false }).retryTask(
-      created.task.id,
-      ACTOR_ID,
-      retryInput,
-    );
+    runtime = { ready: false, reason: "runtime_unavailable" };
+    const replay = await service.retryTask(created.task.id, ACTOR_ID, retryInput);
     expect(replay).toMatchObject({ created: false, run: { id: retry.run.id } });
   });
 });

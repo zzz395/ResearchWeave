@@ -69,8 +69,7 @@ export async function createRealtimeTestServer() {
     sessionEnded: (tokenHash) => hub.closeSession(tokenHash),
   });
   const agentService = createAgentService(new InMemoryAgentRepository(spaceRepository), {
-    ready: true,
-    providerModel: "test-agent-model",
+    getSnapshot: () => ({ ready: true, providerModel: "test-agent-model" }),
   });
   const spaceService = createSpaceService(spaceRepository, {
     spaceDeleted: (spaceId) => hub.revokeSpace(spaceId),

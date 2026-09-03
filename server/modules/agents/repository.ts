@@ -145,6 +145,23 @@ export type ReadAgentRunTraceRepositoryResult =
   | { status: "ok"; record: AgentRunTrace }
   | { status: "run_not_found" };
 
+export interface ReadAgentExecutionStateInput extends AgentWorkerFence {
+  now: Date;
+}
+
+export interface AgentExecutionState {
+  task: AgentTaskRecord;
+  run: AgentRunRecord;
+  steps: AgentRunStepRecord[];
+  evidence: AgentRunEvidenceRecord[];
+}
+
+export type ReadAgentExecutionStateResult =
+  | { status: "ok"; state: AgentExecutionState }
+  | {
+      status: "stale" | "cancel_requested" | "deadline_exceeded" | "access_revoked";
+    };
+
 export interface ClaimAgentRunInput {
   leaseOwnerId: string;
   now: Date;
@@ -257,12 +274,20 @@ export type CompleteAgentToolStepResult =
 export interface FailAgentStepInput extends AgentWorkerFence {
   stepId: string;
   errorCode: AgentErrorCode;
+  contextBytes: number;
   now: Date;
 }
 
 export type FailAgentStepResult =
-  | { status: "failed"; step: AgentRunStepRecord }
-  | { status: "stale" | "cancel_requested" | "deadline_exceeded" | "access_revoked" };
+  | { status: "failed"; step: AgentRunStepRecord; run: AgentRunRecord }
+  | {
+      status:
+        | "stale"
+        | "cancel_requested"
+        | "deadline_exceeded"
+        | "access_revoked"
+        | "context_limit_exceeded";
+    };
 
 export interface CompleteAgentRunInput extends AgentWorkerFence {
   finalStepId: string;
@@ -326,6 +351,9 @@ export interface AgentRepository {
     runId: string,
     actorUserId: string,
   ): Promise<ReadAgentRunTraceRepositoryResult>;
+  readExecutionState(
+    input: ReadAgentExecutionStateInput,
+  ): Promise<ReadAgentExecutionStateResult>;
   claimRun(input: ClaimAgentRunInput): Promise<ClaimAgentRunResult>;
   heartbeatLease(input: HeartbeatAgentLeaseInput): Promise<HeartbeatAgentLeaseResult>;
   cancelRun(
@@ -952,6 +980,62 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
           .where(eq(agentRunEvidence.runId, runId))
           .orderBy(sql`substring(${agentRunEvidence.evidenceKey} from 2)::integer`);
         return { status: "ok", record: { run: row.run, steps, evidence } };
+      });
+    },
+
+    async readExecutionState(input) {
+      return db.transaction(async (transaction): Promise<ReadAgentExecutionStateResult> => {
+        const [run] = await transaction
+          .select()
+          .from(agentRuns)
+          .where(
+            and(
+              eq(agentRuns.id, input.runId),
+              eq(agentRuns.status, "running"),
+              eq(agentRuns.leaseOwnerId, input.leaseOwnerId),
+              eq(agentRuns.leaseGeneration, input.leaseGeneration),
+            ),
+          )
+          .limit(1);
+        if (!run || !run.leaseExpiresAt) return { status: "stale" };
+
+        const [membership] = run.actorUserId
+          ? await transaction
+              .select({ userId: spaceMembers.userId })
+              .from(spaceMembers)
+              .where(
+                and(
+                  eq(spaceMembers.spaceId, run.spaceId),
+                  eq(spaceMembers.userId, run.actorUserId),
+                ),
+              )
+              .limit(1)
+          : [];
+        const guard = classifyAgentWorkerWrite(run, Boolean(membership), input.now);
+        if (guard !== "allowed") return { status: guard };
+        if (run.leaseExpiresAt.getTime() <= input.now.getTime()) return { status: "stale" };
+
+        const [task] = await transaction
+          .select()
+          .from(agentTasks)
+          .where(and(eq(agentTasks.id, run.taskId), eq(agentTasks.spaceId, run.spaceId)))
+          .limit(1);
+        if (!task) throw new Error("Active Agent run has no task.");
+
+        const steps = await transaction
+          .select()
+          .from(agentRunSteps)
+          .where(eq(agentRunSteps.runId, run.id))
+          .orderBy(asc(agentRunSteps.sequence));
+        const evidence = await transaction
+          .select()
+          .from(agentRunEvidence)
+          .where(eq(agentRunEvidence.runId, run.id))
+          .orderBy(sql`substring(${agentRunEvidence.evidenceKey} from 2)::integer`);
+        return { status: "ok", state: { task, run, steps, evidence } };
+      }, {
+        isolationLevel: "repeatable read",
+        accessMode: "read only",
       });
     },
 
@@ -1585,6 +1669,13 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
           if (!failed) throw new Error("Agent terminal guard update returned no record.");
           return { status: membership ? "deadline_exceeded" : "access_revoked" };
         }
+        if (
+          !Number.isInteger(input.contextBytes) ||
+          input.contextBytes < 0 ||
+          input.contextBytes > run.contextMaxBytes
+        ) {
+          return { status: "context_limit_exceeded" };
+        }
         const [step] = await transaction
           .select()
           .from(agentRunSteps)
@@ -1615,7 +1706,21 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
             ),
           )
           .returning();
-        return failed ? { status: "failed", step: failed } : { status: "stale" };
+        if (!failed) return { status: "stale" };
+        const [updatedRun] = await transaction
+          .update(agentRuns)
+          .set({ contextBytes: input.contextBytes, updatedAt: input.now })
+          .where(
+            and(
+              eq(agentRuns.id, run.id),
+              eq(agentRuns.status, "running"),
+              eq(agentRuns.leaseOwnerId, input.leaseOwnerId),
+              eq(agentRuns.leaseGeneration, input.leaseGeneration),
+            ),
+          )
+          .returning();
+        if (!updatedRun) throw new Error("Agent failed-step context update returned no record.");
+        return { status: "failed", step: failed, run: updatedRun };
       });
     },
 

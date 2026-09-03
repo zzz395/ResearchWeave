@@ -89,8 +89,7 @@ export function createTestApp(
   const authService = createAuthService(authRepository);
   const agentRepository = new InMemoryAgentRepository(spaceRepository);
   const agentService = createAgentService(agentRepository, {
-    ready: true,
-    providerModel: "test-agent-model",
+    getSnapshot: () => ({ ready: true, providerModel: "test-agent-model" }),
   });
   const spaceService = createSpaceService(spaceRepository);
   const connectionService = createConnectionService(connectionRepository);

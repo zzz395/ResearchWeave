@@ -727,6 +727,234 @@ async function runRepositorySmoke(): Promise<void> {
   });
   assert.equal(currentHeartbeat.status, "updated");
 
+  const completedStateStepId = "61000000-0000-4000-8000-000000000101";
+  const failedStateStepId = "61000000-0000-4000-8000-000000000102";
+  const runningStateStepId = "61000000-0000-4000-8000-000000000103";
+  const completedStateStep = await repository.reserveStep({
+    runId: activeA.run.id,
+    leaseOwnerId: activeA.run.leaseOwnerId!,
+    leaseGeneration: activeA.run.leaseGeneration,
+    stepId: completedStateStepId,
+    toolName: "search_arxiv",
+    safeArguments: { query: "execution state" },
+    now: new Date("2026-09-03T01:01:11.000Z"),
+  });
+  assert.equal(completedStateStep.status, "reserved");
+  const completedStateWrite = await repository.completeToolStepWithEvidence({
+    runId: activeA.run.id,
+    leaseOwnerId: activeA.run.leaseOwnerId!,
+    leaseGeneration: activeA.run.leaseGeneration,
+    stepId: completedStateStepId,
+    observation: { resultCount: 1 },
+    evidence: [{
+      id: "a1000000-0000-4000-8000-000000000101",
+      kind: "arxiv_abstract",
+      paperId: null,
+      canonicalArxivId: "2609.10101",
+      versionedArxivId: "2609.10101v1",
+      sourceVersion: 1,
+      title: "Execution State Snapshot",
+      url: "https://arxiv.org/abs/2609.10101v1",
+      excerpt: "Evidence retained for fenced execution recovery.",
+    }],
+    contextBytes: 100,
+    now: new Date("2026-09-03T01:01:12.000Z"),
+  });
+  assert.equal(completedStateWrite.status, "completed");
+  const failedStateStep = await repository.reserveStep({
+    runId: activeA.run.id,
+    leaseOwnerId: activeA.run.leaseOwnerId!,
+    leaseGeneration: activeA.run.leaseGeneration,
+    stepId: failedStateStepId,
+    toolName: "search_knowledge_base",
+    safeArguments: { query: "atomic context accounting" },
+    now: new Date("2026-09-03T01:01:13.000Z"),
+  });
+  assert.equal(failedStateStep.status, "reserved");
+
+  const staleStepFailure = await repository.failStep({
+    runId: activeA.run.id,
+    leaseOwnerId: activeA.run.leaseOwnerId!,
+    leaseGeneration: activeA.run.leaseGeneration + 1,
+    stepId: failedStateStepId,
+    errorCode: "retrieval_embedding_unavailable",
+    contextBytes: 321,
+    now: new Date("2026-09-03T01:01:14.000Z"),
+  });
+  assert.equal(staleStepFailure.status, "stale");
+  const excessiveContextFailure = await repository.failStep({
+    runId: activeA.run.id,
+    leaseOwnerId: activeA.run.leaseOwnerId!,
+    leaseGeneration: activeA.run.leaseGeneration,
+    stepId: failedStateStepId,
+    errorCode: "retrieval_embedding_unavailable",
+    contextBytes: activeA.run.contextMaxBytes + 1,
+    now: new Date("2026-09-03T01:01:15.000Z"),
+  });
+  assert.equal(excessiveContextFailure.status, "context_limit_exceeded");
+  const [unchangedFailedStep] = await database.db
+    .select()
+    .from(agentRunSteps)
+    .where(eq(agentRunSteps.id, failedStateStepId));
+  const [unchangedFailedRun] = await database.db
+    .select()
+    .from(agentRuns)
+    .where(eq(agentRuns.id, activeA.run.id));
+  assert.equal(unchangedFailedStep?.status, "running");
+  assert.equal(unchangedFailedRun?.contextBytes, 100);
+
+  await raw`
+    create function phase9_smoke_reject_context_update()
+    returns trigger
+    language plpgsql
+    as $$
+    begin
+      if new.id = '51000000-0000-4000-8000-000000000001'::uuid
+         and new.context_bytes = 222 then
+        return null;
+      end if;
+      return new;
+    end
+    $$
+  `;
+  await raw`
+    create trigger phase9_smoke_reject_context_update
+    before update of context_bytes on agent_runs
+    for each row execute function phase9_smoke_reject_context_update()
+  `;
+  try {
+    await expectRejected(
+      () => repository.failStep({
+        runId: activeA.run.id,
+        leaseOwnerId: activeA.run.leaseOwnerId!,
+        leaseGeneration: activeA.run.leaseGeneration,
+        stepId: failedStateStepId,
+        errorCode: "retrieval_embedding_rejected",
+        contextBytes: 222,
+        now: new Date("2026-09-03T01:01:15.500Z"),
+      }),
+      "A rejected Run context update must abort the failed-Step transaction.",
+    );
+  } finally {
+    await raw`drop trigger phase9_smoke_reject_context_update on agent_runs`;
+    await raw`drop function phase9_smoke_reject_context_update()`;
+  }
+  const [rolledBackFailedStep] = await database.db
+    .select()
+    .from(agentRunSteps)
+    .where(eq(agentRunSteps.id, failedStateStepId));
+  const [rolledBackFailedRun] = await database.db
+    .select()
+    .from(agentRuns)
+    .where(eq(agentRuns.id, activeA.run.id));
+  assert.equal(rolledBackFailedStep?.status, "running");
+  assert.equal(rolledBackFailedRun?.contextBytes, 100);
+
+  const atomicStepFailure = await repository.failStep({
+    runId: activeA.run.id,
+    leaseOwnerId: activeA.run.leaseOwnerId!,
+    leaseGeneration: activeA.run.leaseGeneration,
+    stepId: failedStateStepId,
+    errorCode: "retrieval_embedding_unavailable",
+    contextBytes: 321,
+    now: new Date("2026-09-03T01:01:16.000Z"),
+  });
+  assert.equal(atomicStepFailure.status, "failed");
+  if (atomicStepFailure.status === "failed") {
+    assert.equal(atomicStepFailure.step.observationJson, null);
+    assert.equal(atomicStepFailure.step.errorCode, "retrieval_embedding_unavailable");
+    assert.equal(atomicStepFailure.run.contextBytes, 321);
+  }
+  const [persistedFailedStep] = await database.db
+    .select()
+    .from(agentRunSteps)
+    .where(eq(agentRunSteps.id, failedStateStepId));
+  const [persistedFailedRun] = await database.db
+    .select()
+    .from(agentRuns)
+    .where(eq(agentRuns.id, activeA.run.id));
+  assert.equal(persistedFailedStep?.status, "failed");
+  assert.equal(persistedFailedStep?.observationJson, null);
+  assert.equal(persistedFailedRun?.contextBytes, 321);
+
+  const runningStateStep = await repository.reserveStep({
+    runId: activeA.run.id,
+    leaseOwnerId: activeA.run.leaseOwnerId!,
+    leaseGeneration: activeA.run.leaseGeneration,
+    stepId: runningStateStepId,
+    toolName: "ask_knowledge",
+    safeArguments: { question: "What has already been persisted?" },
+    now: new Date("2026-09-03T01:01:17.000Z"),
+  });
+  assert.equal(runningStateStep.status, "reserved");
+  const executionState = await repository.readExecutionState({
+    runId: activeA.run.id,
+    leaseOwnerId: activeA.run.leaseOwnerId!,
+    leaseGeneration: activeA.run.leaseGeneration,
+    now: new Date("2026-09-03T01:01:18.000Z"),
+  });
+  assert.equal(executionState.status, "ok");
+  if (executionState.status === "ok") {
+    assert.equal(executionState.state.task.id, activeA.task.id);
+    assert.equal(executionState.state.run.id, activeA.run.id);
+    assert.deepEqual(executionState.state.steps.map((step) => step.sequence), [1, 2, 3]);
+    assert.deepEqual(executionState.state.steps.map((step) => step.status), [
+      "completed",
+      "failed",
+      "running",
+    ]);
+    assert.deepEqual(executionState.state.evidence.map((item) => item.evidenceKey), ["E1"]);
+  }
+  const wrongOwnerState = await repository.readExecutionState({
+    runId: activeA.run.id,
+    leaseOwnerId: "91000000-0000-4000-8000-000000000099",
+    leaseGeneration: activeA.run.leaseGeneration,
+    now: new Date("2026-09-03T01:01:18.000Z"),
+  });
+  assert.equal(wrongOwnerState.status, "stale");
+  const wrongGenerationState = await repository.readExecutionState({
+    runId: activeA.run.id,
+    leaseOwnerId: activeA.run.leaseOwnerId!,
+    leaseGeneration: activeA.run.leaseGeneration + 1,
+    now: new Date("2026-09-03T01:01:18.000Z"),
+  });
+  assert.equal(wrongGenerationState.status, "stale");
+
+  const accessState = claimC.claim;
+  await database.db
+    .delete(spaceMembers)
+    .where(eq(spaceMembers.spaceId, OTHER_SPACE_ID));
+  const accessRevokedState = await repository.readExecutionState({
+    runId: accessState.run.id,
+    leaseOwnerId: accessState.run.leaseOwnerId!,
+    leaseGeneration: accessState.run.leaseGeneration,
+    now: new Date("2026-09-03T01:01:19.000Z"),
+  });
+  assert.equal(accessRevokedState.status, "access_revoked");
+  assert.equal("state" in accessRevokedState, false);
+  await database.db.insert(spaceMembers).values({
+    spaceId: OTHER_SPACE_ID,
+    userId: OWNER_ID,
+    role: "owner",
+    joinedAt: BASE_TIME,
+  });
+  const deadlineState = await repository.readExecutionState({
+    runId: accessState.run.id,
+    leaseOwnerId: accessState.run.leaseOwnerId!,
+    leaseGeneration: accessState.run.leaseGeneration,
+    now: accessState.run.deadlineAt!,
+  });
+  assert.equal(deadlineState.status, "deadline_exceeded");
+
+  const expiredState = await repository.readExecutionState({
+    runId: activeB.run.id,
+    leaseOwnerId: activeB.run.leaseOwnerId!,
+    leaseGeneration: activeB.run.leaseGeneration,
+    now: new Date("2026-09-03T01:02:01.000Z"),
+  });
+  assert.equal(expiredState.status, "stale");
+  pass("Repository fenced execution-state reads and atomic failed-step context accounting");
+
   const originalDeadline = activeB.run.deadlineAt;
   const reclaimed = await repository.claimRun({
     leaseOwnerId: "91000000-0000-4000-8000-000000000004",
@@ -874,6 +1102,13 @@ async function runRepositorySmoke(): Promise<void> {
   const cancelTarget = claimC.claim;
   const cancellation = await repository.cancelRun(cancelTarget.run.id, OWNER_ID, new Date("2026-09-03T01:01:20.000Z"));
   assert.equal(cancellation.status, "cancellation_requested");
+  const cancellationState = await repository.readExecutionState({
+    runId: cancelTarget.run.id,
+    leaseOwnerId: cancelTarget.run.leaseOwnerId!,
+    leaseGeneration: cancelTarget.run.leaseGeneration,
+    now: new Date("2026-09-03T01:01:20.000Z"),
+  });
+  assert.equal(cancellationState.status, "cancel_requested");
   const lateFinal = await repository.completeRun({
     runId: cancelTarget.run.id,
     leaseOwnerId: cancelTarget.run.leaseOwnerId!,
@@ -883,6 +1118,13 @@ async function runRepositorySmoke(): Promise<void> {
     now: new Date("2026-09-03T01:01:21.000Z"),
   });
   assert.equal(lateFinal.status, "cancel_requested");
+  const terminalExecutionState = await repository.readExecutionState({
+    runId: cancelTarget.run.id,
+    leaseOwnerId: cancelTarget.run.leaseOwnerId!,
+    leaseGeneration: cancelTarget.run.leaseGeneration,
+    now: new Date("2026-09-03T01:01:22.000Z"),
+  });
+  assert.equal(terminalExecutionState.status, "stale");
   const cancelledRecord = await repository.readRunForMember(cancelTarget.run.id, OWNER_ID);
   assert.equal(cancelledRecord.status, "ok");
   if (cancelledRecord.status === "ok") {

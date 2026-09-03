@@ -51,6 +51,10 @@ export const agentErrorCodeSchema = z.enum([
   "agent_persistence_failed",
   "knowledge_not_indexed",
   "knowledge_embedding_incompatible",
+  "retrieval_embedding_unconfigured",
+  "retrieval_embedding_unavailable",
+  "retrieval_embedding_rejected",
+  "retrieval_embedding_invalid_response",
   "research_temporarily_unavailable",
   "research_upstream_failure",
   "research_upstream_timeout",
@@ -94,7 +98,7 @@ export const agentDefinitionAvailabilitySchema = z.discriminatedUnion("available
   z
     .object({
       available: z.literal(false),
-      reason: z.enum(["provider_unconfigured", "agent_disabled"]),
+      reason: z.enum(["provider_unconfigured", "runtime_unavailable", "agent_disabled"]),
     })
     .strict(),
 ]);

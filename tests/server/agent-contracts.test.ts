@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   AGENT_OBSERVATION_MAX_BYTES,
+  agentDefinitionSchema,
+  agentErrorCodeSchema,
   agentEvidenceSchema,
   agentFinalResultSchema,
   agentObservationSchema,
@@ -81,6 +83,97 @@ describe("Agent request contracts", () => {
 });
 
 describe("Agent response contracts", () => {
+  it("distinguishes runtime readiness reasons without weakening definition invariants", () => {
+    const definition = {
+      id: ids.agent,
+      stableKey: "research-agent",
+      name: "Research Agent",
+      purpose: "Research with grounded evidence.",
+      enabled: true,
+      systemManaged: true,
+      revision: 1,
+      tools: configuration.tools,
+      limits: configuration.limits,
+      promptVersion: configuration.promptVersion,
+      availability: { available: false, reason: "runtime_unavailable" },
+      createdAt: now,
+      updatedAt: now,
+    } as const;
+
+    expect(agentDefinitionSchema.safeParse(definition).success).toBe(true);
+    expect(
+      agentDefinitionSchema.safeParse({
+        ...definition,
+        availability: { available: true, reason: null },
+      }).success,
+    ).toBe(true);
+    expect(
+      agentDefinitionSchema.safeParse({
+        ...definition,
+        availability: { available: true, reason: "runtime_unavailable" },
+      }).success,
+    ).toBe(false);
+    expect(
+      agentDefinitionSchema.safeParse({
+        ...definition,
+        enabled: false,
+        availability: { available: false, reason: "agent_disabled" },
+      }).success,
+    ).toBe(true);
+    expect(
+      agentDefinitionSchema.safeParse({
+        ...definition,
+        enabled: false,
+        availability: { available: false, reason: "runtime_unavailable" },
+      }).success,
+    ).toBe(false);
+    expect(
+      agentDefinitionSchema.safeParse({
+        ...definition,
+        availability: { available: false, reason: "unknown_runtime_state" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts only the allowlisted Retrieval errors in failed Runs and Steps", () => {
+    const retrievalErrors = [
+      "retrieval_embedding_unconfigured",
+      "retrieval_embedding_unavailable",
+      "retrieval_embedding_rejected",
+      "retrieval_embedding_invalid_response",
+    ] as const;
+
+    for (const errorCode of retrievalErrors) {
+      expect(agentErrorCodeSchema.parse(errorCode)).toBe(errorCode);
+      expect(
+        agentRunSchema.safeParse({
+          ...runningRun,
+          status: "failed",
+          finishedAt: now,
+          errorCode,
+        }).success,
+      ).toBe(true);
+      expect(
+        agentStepSchema.safeParse({
+          id: ids.step,
+          runId: ids.run,
+          sequence: 1,
+          kind: "tool_call",
+          status: "failed",
+          toolName: "search_knowledge_base",
+          safeArguments: { query: "bounded query" },
+          observation: null,
+          executionCount: 1,
+          errorCode,
+          startedAt: now,
+          completedAt: now,
+          durationMs: 0,
+        }).success,
+      ).toBe(true);
+    }
+    expect(agentErrorCodeSchema.safeParse("retrieval_private_provider_body").success).toBe(false);
+  });
+
   it("uses status-discriminated run invariants", () => {
     expect(agentRunSchema.parse(runningRun).status).toBe("running");
     expect(

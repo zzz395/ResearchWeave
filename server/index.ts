@@ -51,7 +51,7 @@ const database = createDatabase(environment.DATABASE_URL);
 const realtimeHub = new RealtimeHub();
 const agentService = createAgentService(
   createDrizzleAgentRepository(database),
-  { ready: false },
+  { getSnapshot: () => ({ ready: false, reason: "runtime_unavailable" }) },
 );
 const authService = createAuthService(createDrizzleAuthRepository(database), {
   sessionEnded: (tokenHash) => realtimeHub.closeSession(tokenHash),

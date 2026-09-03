@@ -46,9 +46,13 @@ import type {
 
 const canonicalBase64UrlSchema = /^[A-Za-z0-9_-]+$/u;
 
-export type AgentRuntimeConfiguration =
-  | { ready: false }
+export type AgentRuntimeState =
+  | { ready: false; reason: "provider_unconfigured" | "runtime_unavailable" }
   | { ready: true; providerModel: string };
+
+export interface AgentRuntimeReadiness {
+  getSnapshot(): AgentRuntimeState;
+}
 
 export interface AgentService {
   listDefinitions(): Promise<AgentDefinition[]>;
@@ -114,17 +118,17 @@ export function decodeAgentTaskCursor(cursor: string | undefined): AgentTaskCurs
 
 function availability(
   record: AgentDefinitionRecord,
-  runtime: AgentRuntimeConfiguration,
+  runtime: AgentRuntimeState,
 ): AgentDefinition["availability"] {
   if (!record.enabled) return { available: false, reason: "agent_disabled" };
   return runtime.ready
     ? { available: true, reason: null }
-    : { available: false, reason: "provider_unconfigured" };
+    : { available: false, reason: runtime.reason };
 }
 
 function toDefinition(
   bundle: AgentDefinitionWithTools,
-  runtime: AgentRuntimeConfiguration,
+  runtime: AgentRuntimeState,
 ): AgentDefinition {
   const record = bundle.definition;
   return parseResponse(agentDefinitionSchema, {
@@ -287,14 +291,16 @@ function mapCreateError(
 
 export function createAgentService(
   repository: AgentRepository,
-  runtime: AgentRuntimeConfiguration,
+  readiness: AgentRuntimeReadiness,
 ): AgentService {
   return {
     async listDefinitions() {
+      const runtime = readiness.getSnapshot();
       return (await repository.listDefinitions(null)).map((item) => toDefinition(item, runtime));
     },
 
     async getDefinition(agentId) {
+      const runtime = readiness.getSnapshot();
       const bundle = await repository.findDefinition(agentId, null);
       if (!bundle) throw new AppError(404, "agent_not_found", "Agent was not found.");
       return toDefinition(bundle, runtime);
@@ -302,6 +308,7 @@ export function createAgentService(
 
     async createTask(spaceId, actorUserId, rawInput) {
       const input = createAgentTaskInputSchema.parse(rawInput);
+      const runtime = readiness.getSnapshot();
       const result = await repository.createTaskWithInitialRun({
         taskId: randomUUID(),
         runId: randomUUID(),
@@ -368,6 +375,7 @@ export function createAgentService(
       if (taskResult.status === "task_not_found") {
         throw new AppError(404, "agent_task_not_found", "Agent task was not found.");
       }
+      const runtime = readiness.getSnapshot();
       const result = await repository.createRetryRun({
         runId: randomUUID(),
         taskId,
