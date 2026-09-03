@@ -83,6 +83,20 @@ describe("Agent request contracts", () => {
 describe("Agent response contracts", () => {
   it("uses status-discriminated run invariants", () => {
     expect(agentRunSchema.parse(runningRun).status).toBe("running");
+    expect(
+      agentRunSchema.parse({
+        ...runningRun,
+        cancelRequestedAt: now,
+        cancelRequestedByUserId: null,
+      }).cancelRequestedAt,
+    ).toBe(now);
+    expect(
+      agentRunSchema.safeParse({
+        ...runningRun,
+        cancelRequestedAt: null,
+        cancelRequestedByUserId: ids.user,
+      }).success,
+    ).toBe(false);
     expect(agentRunSchema.safeParse({ ...runningRun, status: "completed" }).success).toBe(false);
     expect(
       agentRunSchema.safeParse({

@@ -325,10 +325,10 @@ export const agentRunSchema = z.discriminatedUnion("status", [
   failedAgentRunSchema,
   cancelledAgentRunSchema,
 ]).superRefine((run, context) => {
-  if ((run.cancelRequestedAt === null) !== (run.cancelRequestedByUserId === null)) {
+  if (run.cancelRequestedByUserId !== null && run.cancelRequestedAt === null) {
     context.addIssue({
       code: "custom",
-      message: "Cancellation request time and actor must either both exist or both be absent.",
+      message: "A cancellation actor requires a cancellation request time.",
       path: ["cancelRequestedAt"],
     });
   }
