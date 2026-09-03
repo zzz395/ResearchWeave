@@ -38,3 +38,7 @@ export function createResearchSearchParams(state: ResearchUrlState) {
     sort: state.sort,
   });
 }
+
+export function getResearchPaginationScrollBehavior(prefersReducedMotion: boolean): ScrollBehavior {
+  return prefersReducedMotion ? "auto" : "smooth";
+}

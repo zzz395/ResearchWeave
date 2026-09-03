@@ -11,7 +11,19 @@ import { useRealtime } from "../../../services/realtime/realtime-context";
 import { useAuth } from "../../auth/auth-state";
 import { useSpaceLayout } from "../../spaces/components/space-layout-context";
 import { listMessages } from "../api/chat";
+import { getChatLiveAnnouncement } from "../chat-live-announcement";
 import { mergeChatMessages } from "../merge-chat-messages";
+
+export function ChatLiveAnnouncer({ announcement }: {
+  announcement: { id: string; text: string } | null;
+}) {
+  if (!announcement) return null;
+  return (
+    <p aria-atomic="true" aria-live="polite" className="rw-visually-hidden" key={announcement.id} role="status">
+      {announcement.text}
+    </p>
+  );
+}
 
 export function Component() {
   const space = useSpaceLayout();
@@ -23,6 +35,7 @@ export function Component() {
   const [draftError, setDraftError] = useState("");
   const [sendError, setSendError] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [liveAnnouncement, setLiveAnnouncement] = useState<{ id: string; text: string } | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const historyQuery = useInfiniteQuery({
     queryKey: ["chat-messages", space.id],
@@ -37,13 +50,15 @@ export function Component() {
       subscribeSpace(space.id, (event) => {
         if (event.type === "chat.message.created") {
           setLiveMessages((current) => mergeChatMessages(current, [event.payload.message]));
+          const announcement = getChatLiveAnnouncement(event.payload.message, user?.id);
+          if (announcement) setLiveAnnouncement(announcement);
         }
         if (event.type === "space.snapshot" || event.type === "presence.updated") {
           setPresentUserIds(event.payload.presentUserIds);
         }
         if (event.type === "realtime.reconnected") void refetchHistory();
       }),
-    [refetchHistory, space.id, subscribeSpace],
+    [refetchHistory, space.id, subscribeSpace, user?.id],
   );
 
   const messages = useMemo(
@@ -88,13 +103,14 @@ export function Component() {
   return (
     <section className="rw-chat-workspace rw-space-tab-panel">
       <header className="rw-chat-header">
-        <div><p className="rw-page-kicker">Persistent space chat</p><h2>Conversation</h2></div>
+        <div><h2>Conversation</h2><p>Messages form a durable research record for this Space.</p></div>
         <div className={`rw-realtime-state rw-realtime-state--${status}`}>
           {status === "connected" ? <Wifi aria-hidden="true" size={15} /> : <WifiOff aria-hidden="true" size={15} />}
           <span>{status === "connected" ? `${presentUserIds.length} viewing this space` : status === "connecting" ? "Reconnecting…" : "Realtime disconnected"}</span>
         </div>
       </header>
-      <div className="rw-message-history" aria-live="polite">
+      <ChatLiveAnnouncer announcement={liveAnnouncement} />
+      <div aria-busy={historyQuery.isFetchingNextPage} className="rw-message-history">
         {historyQuery.hasNextPage ? (
           <Button disabled={historyQuery.isFetchingNextPage} onClick={() => void historyQuery.fetchNextPage()} variant="ghost">
             {historyQuery.isFetchingNextPage ? <LoadingLabel>Loading earlier messages</LoadingLabel> : "Load earlier messages"}

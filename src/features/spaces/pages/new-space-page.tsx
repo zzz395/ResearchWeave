@@ -51,7 +51,7 @@ export function Component() {
       <section className="rw-form-panel">
         <form className="rw-form" noValidate onSubmit={(event) => void handleSubmit(event)}>
           {requestError ? <Alert><strong>Space creation failed.</strong><span>{requestError.message}</span></Alert> : null}
-          <InputField autoFocus error={fieldErrors.name} id="name" label="Name" maxLength={80} name="name" required />
+          <InputField error={fieldErrors.name} id="name" label="Name" maxLength={80} name="name" required />
           <TextareaField
             error={fieldErrors.description}
             hint="Optional · 1,000 characters max"

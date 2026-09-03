@@ -48,28 +48,28 @@ export function DocumentList({
             const canManage = canManageDocument(document, spaceRole, currentUserId);
             return (
               <tr key={document.id}>
-                <td>
+                <td data-label="Document">
                   <button className="rw-document-name" onClick={() => onView(document)} type="button">
                     {document.originalFilename}
                   </button>
                   <span>{getDocumentMediaTypeLabel(document.mediaType)} · {(document.sizeBytes / 1024).toFixed(1)} KB</span>
                 </td>
-                <td><DocumentStatus document={document} /></td>
-                <td>
+                <td data-label="Indexing"><DocumentStatus document={document} /></td>
+                <td data-label="Active index">
                   <span className={`rw-index-state ${activeIndex.available ? "is-available" : ""}`}>
                     {activeIndex.label}
                   </span>
                   <small>{activeIndex.detail}</small>
                 </td>
-                <td>
+                <td data-label="Knowledge">
                   <strong>{document.chunkCount.toLocaleString()}</strong>
                   <span>chunks</span>
                 </td>
-                <td>
+                <td data-label="Timeline">
                   <time dateTime={document.createdAt}>Uploaded {formatResearchDate(document.createdAt)}</time>
                   <span>{document.indexedAt ? `Indexed ${formatResearchDate(document.indexedAt)}` : "Not indexed yet"}</span>
                 </td>
-                <td>
+                <td data-label="Actions">
                   <div className="rw-document-actions">
                     <Button aria-label={`View ${document.originalFilename}`} onClick={() => onView(document)} variant="ghost">
                       <Eye aria-hidden="true" size={15} />View

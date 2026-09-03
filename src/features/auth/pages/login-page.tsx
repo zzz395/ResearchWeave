@@ -63,7 +63,6 @@ export function Component() {
           ) : null}
           <InputField
             autoComplete="email"
-            autoFocus
             error={fieldErrors.email}
             id="email"
             label="Email"

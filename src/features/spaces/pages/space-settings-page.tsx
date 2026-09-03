@@ -114,7 +114,7 @@ export function Component() {
           <Dialog.Trigger asChild><Button variant="danger"><Trash2 aria-hidden="true" size={17} />Delete space</Button></Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Overlay className="rw-dialog-overlay" />
-            <Dialog.Content className="rw-dialog-card">
+            <Dialog.Content aria-modal="true" className="rw-dialog-card">
               <div className="rw-dialog-card__heading">
                 <div><p className="rw-page-kicker">Permanent action</p><Dialog.Title>Delete “{space.name}”?</Dialog.Title></div>
                 <Dialog.Close className="rw-icon-button" aria-label="Close confirmation"><X aria-hidden="true" size={20} /></Dialog.Close>

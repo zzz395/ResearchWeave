@@ -7,6 +7,13 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Brand } from "../components/brand";
 import { useAuth } from "../features/auth/auth-state";
 import { REALTIME_ACCESS_REVOKED_EVENT } from "../services/realtime/realtime-context";
+import { primaryNavigationGroups } from "./navigation";
+
+const navigationIcons = {
+  research: BookOpen,
+  spaces: Library,
+  connections: UsersRound,
+} as const;
 
 function UserMenu({ compact = false }: { compact?: boolean }) {
   const { user, logout } = useAuth();
@@ -71,34 +78,26 @@ function UserMenu({ compact = false }: { compact?: boolean }) {
 function PrimaryNavigation({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav aria-label="Primary navigation" className="rw-primary-nav">
-      <p>Collaborate</p>
-      <NavLink
-        className={({ isActive }) => (isActive ? "is-active" : "")}
-        onClick={onNavigate}
-        title="Research"
-        to="/research"
-      >
-        <BookOpen aria-hidden="true" size={19} />
-        <span>Research</span>
-      </NavLink>
-      <NavLink
-        className={({ isActive }) => (isActive ? "is-active" : "")}
-        onClick={onNavigate}
-        title="Research Spaces"
-        to="/spaces"
-      >
-        <Library aria-hidden="true" size={19} />
-        <span>Research Spaces</span>
-      </NavLink>
-      <NavLink
-        className={({ isActive }) => (isActive ? "is-active" : "")}
-        onClick={onNavigate}
-        title="Connections"
-        to="/connections"
-      >
-        <UsersRound aria-hidden="true" size={19} />
-        <span>Connections</span>
-      </NavLink>
+      {primaryNavigationGroups.map((group) => (
+        <div className="rw-primary-nav__group" key={group.label}>
+          <p>{group.label}</p>
+          {group.destinations.map((destination) => {
+            const Icon = navigationIcons[destination.icon];
+            return (
+              <NavLink
+                className={({ isActive }) => (isActive ? "is-active" : "")}
+                key={destination.to}
+                onClick={onNavigate}
+                title={destination.label}
+                to={destination.to}
+              >
+                <Icon aria-hidden="true" size={19} />
+                <span>{destination.label}</span>
+              </NavLink>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 }

@@ -115,6 +115,13 @@ export function getDocumentSummary(documents: readonly Document[]) {
   };
 }
 
+export function isTrueZeroDocumentList(
+  documents: readonly Document[],
+  nextCursor: string | null | undefined,
+): boolean {
+  return documents.length === 0 && nextCursor === null;
+}
+
 export function shouldPollDocuments(
   documents: ReadonlyArray<Pick<Document, "status">>,
 ): boolean {

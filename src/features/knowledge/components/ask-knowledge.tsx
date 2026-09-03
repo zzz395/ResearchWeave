@@ -105,7 +105,6 @@ function AskResult({
       {result.status === "answered" ? (
         <div className="rw-ask-answer">
           <div className="rw-ask-answer__heading">
-            <p className="rw-page-kicker">Grounded response</p>
             <h4>Answer</h4>
           </div>
           <AnswerText
@@ -163,12 +162,9 @@ export function AskKnowledge({
   }
 
   return (
-    <section className="rw-ask-knowledge" aria-labelledby="ask-knowledge-heading">
+    <section aria-busy={askMutation.isPending} className="rw-ask-knowledge" aria-labelledby="ask-knowledge-heading">
       <div className="rw-ask-knowledge__heading">
-        <div>
-          <p className="rw-page-kicker">Indexed evidence</p>
-          <h3 id="ask-knowledge-heading">Ask Knowledge</h3>
-        </div>
+        <h3 id="ask-knowledge-heading">Ask Knowledge</h3>
         <p>Ask one question across this Space’s active knowledge indexes. Results are temporary and replace the previous answer.</p>
       </div>
 
