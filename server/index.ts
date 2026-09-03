@@ -16,6 +16,8 @@ import { OpenAICompatibleGroundedAnswerGenerator } from "./integrations/grounded
 import { OpenAICompatibleResearchSummaryGenerator } from "./integrations/research-summary/openai-compatible-generator";
 import { createDrizzleChatRepository } from "./modules/chat/repository";
 import { createChatService } from "./modules/chat/service";
+import { createDrizzleAgentRepository } from "./modules/agents/repository";
+import { createAgentService } from "./modules/agents/service";
 import { createDrizzleConnectionRepository } from "./modules/connections/repository";
 import { createConnectionService } from "./modules/connections/service";
 import { createDrizzleDocumentRepository } from "./modules/documents/repository";
@@ -47,6 +49,10 @@ const environment = loadEnvironment();
 const logger = createLogger(environment);
 const database = createDatabase(environment.DATABASE_URL);
 const realtimeHub = new RealtimeHub();
+const agentService = createAgentService(
+  createDrizzleAgentRepository(database),
+  { ready: false },
+);
 const authService = createAuthService(createDrizzleAuthRepository(database), {
   sessionEnded: (tokenHash) => realtimeHub.closeSession(tokenHash),
 });
@@ -126,6 +132,7 @@ const app = createApp({
   logger,
   checkDatabase: () => database.checkHealth(),
   authService,
+  agentService,
   spaceService,
   connectionService,
   memberService,

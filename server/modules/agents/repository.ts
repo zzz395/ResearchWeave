@@ -79,13 +79,20 @@ export interface CreateAgentTaskRepositoryInput {
   prompt: string;
   clientRequestId: string;
   requestFingerprint: string;
-  providerModel: string;
+  providerModel: string | null;
   now: Date;
 }
 
 export type CreateAgentTaskRepositoryResult =
   | { status: "created" | "existing"; task: AgentTaskRecord; run: AgentRunPersistenceView }
-  | { status: "idempotency_conflict" | "space_not_found" | "agent_not_found" };
+  | {
+      status:
+        | "idempotency_conflict"
+        | "space_not_found"
+        | "agent_not_found"
+        | "agent_disabled"
+        | "runtime_unavailable";
+    };
 
 export interface CreateAgentRetryRepositoryInput {
   runId: string;
@@ -93,13 +100,20 @@ export interface CreateAgentRetryRepositoryInput {
   actorUserId: string;
   clientRequestId: string;
   requestFingerprint: string;
-  providerModel: string;
+  providerModel: string | null;
   now: Date;
 }
 
 export type CreateAgentRetryRepositoryResult =
   | { status: "created" | "existing"; run: AgentRunPersistenceView }
-  | { status: "idempotency_conflict" | "retry_not_allowed" | "task_not_found" };
+  | {
+      status:
+        | "idempotency_conflict"
+        | "retry_not_allowed"
+        | "task_not_found"
+        | "agent_disabled"
+        | "runtime_unavailable";
+    };
 
 export interface AgentTaskCursorRecord {
   createdAt: Date;
@@ -640,6 +654,8 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
 
         const bundle = await loadDefinition(transaction, input.agentId, input.spaceId);
         if (!bundle || bundle.tools.length === 0) return { status: "agent_not_found" };
+        if (!bundle.definition.enabled) return { status: "agent_disabled" };
+        if (input.providerModel === null) return { status: "runtime_unavailable" };
 
         const [createdTask] = await transaction
           .insert(agentTasks)
@@ -772,6 +788,8 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
 
         const bundle = await loadDefinition(transaction, task.agentId, task.spaceId);
         if (!bundle || bundle.tools.length === 0) return { status: "retry_not_allowed" };
+        if (!bundle.definition.enabled) return { status: "agent_disabled" };
+        if (input.providerModel === null) return { status: "runtime_unavailable" };
 
         const [run] = await transaction
           .insert(agentRuns)

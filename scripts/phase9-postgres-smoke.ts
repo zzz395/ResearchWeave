@@ -193,7 +193,23 @@ async function assertSchemaShape(): Promise<void> {
     "agent_run_evidence_run_key_unique",
     "agent_run_evidence_run_final_ordinal_unique",
   ]) assert(indexNames.has(name), `Missing Agent index ${name}.`);
-  pass("Agent tables, enums, and indexes");
+
+  const [systemDefinition] = await database.db
+    .select()
+    .from(agentDefinitions)
+    .where(eq(agentDefinitions.id, AGENT_ID));
+  assert.equal(systemDefinition?.stableKey, "research-agent");
+  assert.equal(systemDefinition?.systemManaged, true);
+  assert.deepEqual(systemDefinition?.limitsJson, AGENT_EXECUTION_LIMITS);
+  const systemTools = await database.db
+    .select({ toolName: agentDefinitionTools.toolName })
+    .from(agentDefinitionTools)
+    .where(eq(agentDefinitionTools.agentId, AGENT_ID));
+  assert.deepEqual(
+    systemTools.map((item) => item.toolName).sort(),
+    ["ask_knowledge", "search_arxiv", "search_knowledge_base"],
+  );
+  pass("Agent tables, enums, indexes, and system definition provisioning");
 }
 
 async function seedAgentFixtures(): Promise<void> {
@@ -216,25 +232,6 @@ async function seedAgentFixtures(): Promise<void> {
   await database.db.insert(spaceMembers).values([
     { spaceId: SPACE_ID, userId: MEMBER_ID, role: "member", joinedAt: BASE_TIME },
     { spaceId: OTHER_SPACE_ID, userId: OWNER_ID, role: "owner", joinedAt: BASE_TIME },
-  ]);
-  await database.db.insert(agentDefinitions).values({
-    id: AGENT_ID,
-    spaceId: null,
-    stableKey: "research-agent",
-    name: "Research Agent",
-    purpose: "Bounded research orchestration smoke fixture",
-    enabled: true,
-    systemManaged: true,
-    revision: 1,
-    limitsJson: AGENT_EXECUTION_LIMITS,
-    promptVersion: "research-agent-v1",
-    createdAt: BASE_TIME,
-    updatedAt: BASE_TIME,
-  });
-  await database.db.insert(agentDefinitionTools).values([
-    { agentId: AGENT_ID, toolName: "search_arxiv" },
-    { agentId: AGENT_ID, toolName: "search_knowledge_base" },
-    { agentId: AGENT_ID, toolName: "ask_knowledge" },
   ]);
 }
 
@@ -627,12 +624,21 @@ async function runRepositorySmoke(): Promise<void> {
     providerModel: "phase9-repository-smoke",
     now: firstCreatedAt,
   };
+  const unavailableCreate = await repository.createTaskWithInitialRun({
+    ...createAInput,
+    taskId: "41000000-0000-4000-8000-000000000098",
+    runId: "51000000-0000-4000-8000-000000000098",
+    clientRequestId: "91000000-0000-4000-8000-000000000098",
+    providerModel: null,
+  });
+  assert.equal(unavailableCreate.status, "runtime_unavailable");
   const createdA = await repository.createTaskWithInitialRun(createAInput);
   assert.equal(createdA.status, "created");
   const existingA = await repository.createTaskWithInitialRun({
     ...createAInput,
     taskId: "41000000-0000-4000-8000-000000000099",
     runId: "51000000-0000-4000-8000-000000000099",
+    providerModel: null,
   });
   assert.equal(existingA.status, "existing");
   if (existingA.status === "existing") {
@@ -949,6 +955,16 @@ async function runRepositorySmoke(): Promise<void> {
     assert.deepEqual(retryOne.run.finalEvidenceIds, []);
     assert.deepEqual(retryTwo.run.finalEvidenceIds, []);
   }
+  const retryReplayWithoutRuntime = await repository.createRetryRun({
+    runId: "51000000-0000-4000-8000-000000000022",
+    taskId: taskB,
+    actorUserId: OWNER_ID,
+    clientRequestId: retryRequest,
+    requestFingerprint: retryFingerprint,
+    providerModel: null,
+    now: new Date("2026-09-03T01:04:01.000Z"),
+  });
+  assert.equal(retryReplayWithoutRuntime.status, "existing");
   pass("Repository retry attempt and idempotency race serialization");
 
   await database.db.delete(researchSpaces).where(eq(researchSpaces.id, OTHER_SPACE_ID));
