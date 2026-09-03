@@ -1,28 +1,26 @@
 # ResearchWeave
 
-**Real-Time Research Collaboration & RAG Agent Platform**
+**Real-Time Research Collaboration & RAG Platform**
 
-ResearchWeave is a research and engineering SaaS application beginning with secure accounts and durable Research Spaces. Later product domains remain documented plans rather than shipped functionality.
+ResearchWeave is a TypeScript research workspace for small teams. It combines secure Research Spaces, realtime collaboration, real academic discovery, durable document indexing, semantic retrieval, and citation-grounded knowledge answers in one modular monolith.
 
 ## Current status
 
-ResearchWeave has completed **Phase 4 — Collaboration, Members & Realtime Chat**. It now extends the authenticated Research Space boundary with private connections, owner-controlled membership, durable chat, and authenticated realtime delivery.
+ResearchWeave has completed **Phase 8B — Product UX Refinement & Accessibility**. The current release line integrates the shipped collaboration, Research, and Knowledge workflows behind a responsive, keyboard-accessible application shell.
 
-Implemented through the current phase:
+Implemented through Phase 8B:
 
-- Registration, login, session restoration, protected routes, and logout
-- bcrypt password hashing and opaque server-side sessions in secure cookie settings
-- Responsive authenticated shell with only the implemented Research Spaces navigation
-- Research Space list, empty state, creation, detail, owner editing, and confirmed deletion
-- Membership-scoped reads and owner-only lifecycle authorization
-- Private connection request, accept/reject/cancel, list, and removal workflows
-- Connection-based member admission, member leave, and immediate access revocation
-- PostgreSQL-backed chat history with stable cursor pagination
-- Authenticated, Origin-validated WebSocket subscriptions and persist-before-broadcast chat
-- Multi-tab-deduplicated presence, heartbeat, bounded reconnect, resubscribe, and REST recovery
-- Shared Zod API contracts, versioned Drizzle migrations, structured errors, rate limiting, Origin checks, and automated authorization tests
+- secure registration, login, session restoration, protected routes, and logout
+- Research Space creation, membership authorization, owner controls, and connections
+- PostgreSQL-backed chat with authenticated WebSocket delivery, presence, reconnect, and REST recovery
+- real arXiv search, paper detail, Space-scoped Saved Papers, and clearly labelled abstract-based summaries
+- PDF, Markdown, and TXT upload with durable storage, extraction, deterministic chunking, embeddings, reindexing, retry, and failure states
+- Space-authorized pgvector semantic retrieval and grounded answers with exact source citations
+- integrated Research-to-Saved-Papers and Space-to-Knowledge workflows
+- responsive desktop, tablet, and mobile navigation with accessible focus, status, error, and realtime-announcement behavior
+- shared Zod contracts, versioned Drizzle migrations, structured errors, Origin checks, rate limits, and automated authorization coverage
 
-Document ingestion, knowledge bases, RAG, paper research, agents, and activity are not implemented in this phase.
+ResearchWeave does **not** yet implement the Agent runtime, execution traces, unified Activity, or paper comparison. These remain planned work and are not represented by placeholder routes or fabricated data.
 
 ## Development setup
 
@@ -40,30 +38,58 @@ Document ingestion, knowledge bases, RAG, paper research, agents, and activity a
 4. Apply versioned database migrations with `npm run db:migrate`.
 5. Start the client and API together with `npm run dev`.
 
-The Vite client runs at `http://localhost:5173`. The Express API runs at `http://localhost:3001`, and its versioned health endpoint is `GET /api/v1/health`. That endpoint performs a real `SELECT 1` database probe and returns `503` when PostgreSQL is unavailable.
+The Vite client runs at `http://localhost:5173`. The Express API runs at `http://localhost:3001`; `GET /api/v1/health` performs a real database probe and returns `503` when PostgreSQL is unavailable.
 
-### Authentication behavior
+### Optional model-backed capabilities
 
-- Registering creates the account and a seven-day server-side session, then opens `/spaces`.
-- Login failures use one generic message for unknown accounts and incorrect passwords.
-- The browser receives only an opaque session token in an `HttpOnly`, `SameSite=Lax` cookie. Production cookies also use `Secure`.
-- The database stores only a SHA-256 hash of the session token; the client does not store authentication truth in local or session storage.
-- Protected routes redirect to `/login` and preserve only a validated same-origin return path.
-- State-changing API calls require the configured `CLIENT_ORIGIN` in addition to normal CORS controls.
+`LLM_BASE_URL` and `LLM_API_KEY` enable the OpenAI-compatible embedding adapter used for document indexing and semantic retrieval. Adding `LLM_MODEL` also enables abstract-based paper summaries and grounded answer generation.
 
-### Research Spaces
+These values are server-only. If they are absent, the corresponding operations return explicit unavailable or failed states rather than generated fallback content. Original documents are stored under `DOCUMENT_STORAGE_DIR` and are never served as a public directory.
 
-Authenticated users can create, list, and open spaces for which they have a membership. Space creation and the owner's membership are committed in one database transaction. Members can read a space; only its owner can rename, edit, or delete it. Deleting a space cascades its membership records.
+## Product areas
 
-Owners can add accepted connections as members and remove ordinary members. Members can list the durable membership record and leave a space themselves. Removing a connection does not remove an existing space membership.
+### Collaboration
 
-Chat history is durable PostgreSQL state and is read through REST with a stable cursor. WebSocket carries only realtime deltas: authenticated clients subscribe to authorized spaces, and messages are persisted before they are broadcast or acknowledged. Presence means that at least one tab for the user is currently subscribed to the space; it is not durable membership truth.
+Research Spaces are the authorization and collaboration boundary. Members can work with shared chat history, saved papers, and indexed documents; owners control membership and Space lifecycle. WebSocket messages are authorized against current durable membership and persisted before broadcast.
 
-Current routes are limited to `/`, `/login`, `/register`, `/connections`, `/spaces`, `/spaces/new`, `/spaces/:spaceId`, `/spaces/:spaceId/chat`, `/spaces/:spaceId/members`, and `/spaces/:spaceId/settings`. Unimplemented product routes are intentionally absent from the router and navigation.
+### Research
 
-Versioned APIs:
+Research uses real arXiv metadata. Search results retain canonical and versioned identifiers, abstracts, source links, and normalized metadata. Optional generated summaries are restricted to paper metadata and abstract content and are labelled **Abstract-based Summary**.
+
+Saved Papers are explicit Space-scoped records. Saving a paper does not claim that its full text has been downloaded or indexed.
+
+### Knowledge
+
+Space members can upload PDF, Markdown, or TXT documents. A durable worker extracts text, creates deterministic chunks and embeddings, and exposes queued, processing, ready, and failed states. Reindexing preserves the last good active index until replacement succeeds.
+
+Semantic retrieval filters all vector queries by current Space membership and compatible active indexes. Grounded answers cite only the authorized chunks supplied to the model and report insufficient context instead of inventing an answer.
+
+## Current application routes
 
 ```text
+/
+/login
+/register
+/research
+/research/papers/:paperId
+/spaces
+/spaces/new
+/spaces/:spaceId
+/spaces/:spaceId/chat
+/spaces/:spaceId/saved-papers
+/spaces/:spaceId/knowledge
+/spaces/:spaceId/members
+/spaces/:spaceId/settings
+/connections
+```
+
+Future destinations such as Agents and Activity are intentionally absent from the runtime router and navigation.
+
+## Versioned APIs
+
+```text
+GET  /api/v1/health
+
 POST /api/v1/auth/register
 POST /api/v1/auth/login
 GET  /api/v1/auth/session
@@ -84,11 +110,28 @@ GET    /api/v1/spaces/:spaceId/members
 POST   /api/v1/spaces/:spaceId/members
 DELETE /api/v1/spaces/:spaceId/members/:userId
 
-GET    /api/v1/spaces/:spaceId/messages
-WS     /api/v1/realtime
+GET /api/v1/spaces/:spaceId/messages
+WS  /api/v1/realtime
+
+GET    /api/v1/research/papers/search
+GET    /api/v1/research/papers/:paperId
+GET    /api/v1/research/papers/:paperId/summary
+PUT    /api/v1/research/papers/:paperId/summary
+GET    /api/v1/spaces/:spaceId/saved-papers
+PUT    /api/v1/spaces/:spaceId/saved-papers/:paperId
+DELETE /api/v1/spaces/:spaceId/saved-papers/:paperId
+
+POST   /api/v1/spaces/:spaceId/documents
+GET    /api/v1/spaces/:spaceId/documents
+GET    /api/v1/spaces/:spaceId/documents/:documentId
+POST   /api/v1/spaces/:spaceId/documents/:documentId/reindex
+DELETE /api/v1/spaces/:spaceId/documents/:documentId
+
+POST /api/v1/spaces/:spaceId/knowledge/retrieve
+POST /api/v1/spaces/:spaceId/knowledge/ask
 ```
 
-### Quality and production commands
+## Quality and production commands
 
 ```text
 npm run lint
@@ -98,7 +141,19 @@ npm run build
 npm start
 ```
 
-`npm run build` creates the client and server production artifacts in `dist/`. Run `npm start` after building; Express serves both the API and the client-side application routes.
+`npm run build` creates production client and server artifacts in `dist/`. Express serves both the API and client-side routes when started in production mode.
+
+PostgreSQL/pgvector smoke tests require separate, empty disposable databases whose names contain the indicated smoke identifier:
+
+```powershell
+$env:PHASE6_SMOKE_DATABASE_URL = "postgresql://.../phase6_smoke"
+npm run test:phase6:postgres
+
+$env:PHASE7A_SMOKE_DATABASE_URL = "postgresql://.../phase7a_smoke"
+npm run test:phase7a:postgres
+```
+
+The smoke scripts refuse to use the normal `DATABASE_URL` or a non-empty target. CI provisions isolated databases for both checks.
 
 Database migration commands:
 
@@ -107,26 +162,16 @@ npm run db:generate
 npm run db:migrate
 ```
 
-All runtime configuration is validated centrally on startup. `.env` is ignored by Git; commit only the documented placeholders in `.env.example`.
+All runtime configuration is validated on startup. `.env` and original document storage are ignored by Git; commit only the documented placeholders in `.env.example`.
 
-## Planned capabilities (not implemented)
-
-- PDF, Markdown, and TXT document ingestion into knowledge bases
-- Grounded knowledge questions with retrievable source citations
-- Real arXiv paper search and clearly labelled abstract-based summaries
-- Paper inspection, saving, and comparison
-- Tool-calling research agents with durable task status and execution traces
-- A unified activity history across collaboration, knowledge, research, and agents
-
-## Architecture documentation
+## Architecture and design documentation
 
 - [Product architecture](docs/architecture/product-architecture.md)
 - [Technical architecture](docs/architecture/technical-architecture.md)
 - [Implementation roadmap](docs/architecture/implementation-roadmap.md)
-
-## Design documentation
-
 - [UI/UX specification](docs/design/ui-ux-spec.md)
 - [Design system](docs/design/design-system.md)
 - [Navigation and routes](docs/design/navigation-and-routes.md)
 - [Screen specifications](docs/design/screen-specifications.md)
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.

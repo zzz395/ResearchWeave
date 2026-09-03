@@ -2,15 +2,36 @@
 
 ## Purpose and status
 
-This document defines the future navigation model, route hierarchy, URL-state rules, and route-guard behavior. It is a specification only. A listed route is not an implemented feature.
+This document records both the **implemented Phase 8B route surface** and the planned expanded navigation model. The implemented tables are descriptive of the current router; the planned tables are specifications only and do not imply that a route or feature exists.
 
-The route model follows the approved product boundary: Research Space is the collaboration scope; Paper Detail and Execution Trace are detail routes; Chat and Members exist only in a selected space; external Research and imported Knowledge remain distinct.
+The route model follows the approved product boundary: Research Space is the collaboration scope; Paper Detail and future Execution Trace are detail routes; Chat, Saved Papers, Knowledge, and Members operate in a selected Space; external Research metadata and imported Knowledge remain distinct.
 
 ## Navigation mental model
 
 ResearchWeave has one stable primary navigation: the authenticated application sidebar. It answers “which product area am I in?” Contextual tabs answer “which view of this resource am I using?” Breadcrumbs answer “how did this resource inherit its context?” Detail routes are reached from content and never become permanent sidebar items.
 
-### Primary sidebar
+### Implemented Phase 8B navigation
+
+```text
+ResearchWeave
+├─ Discover
+│  └─ Research
+└─ Workspace
+   ├─ Spaces
+   └─ Connections
+
+Selected Research Space
+├─ Overview
+├─ Saved Papers
+├─ Knowledge
+├─ Chat
+├─ Members
+└─ Settings                     (owner only)
+```
+
+Research is global discovery. Saved Papers and Knowledge are Space-scoped so that authorization and collaboration context remain explicit. Paper Detail is reached from Research results; it is not a permanent sidebar destination.
+
+### Planned expanded primary sidebar
 
 ```text
 ResearchWeave
@@ -37,11 +58,11 @@ The following are deliberately not primary navigation items:
 - Logout: an account action inside the user menu.
 - Search, notifications, command menu, presence, and workspace switcher: absent until a real cross-product behavior exists.
 
-### Secondary and contextual navigation
+### Planned secondary and contextual navigation
 
 | Context | Navigation |
 |---|---|
-| Research Space | `Overview`, `Chat`, `Members`, `Settings` tabs. The space name and role remain above the tabs. |
+| Research Space | `Overview`, `Saved Papers`, `Knowledge`, `Chat`, `Members`, and owner-only `Settings` tabs. The space name and role remain above the tabs. |
 | Knowledge | `Documents`, `Knowledge Bases` section tabs. `Ask` is an action/detail route tied to one knowledge base. |
 | Research | `Search`, `Saved Papers`; comparison is launched from selection and opens a route. |
 | Agents | `Agents`, `Tasks`; Agent Detail and Run Trace are reached from records. |
@@ -49,7 +70,35 @@ The following are deliberately not primary navigation items:
 
 Tabs use URL routes when a view should survive refresh or be shareable. Local tabs are reserved for presentational subdivisions that do not change the data boundary.
 
-## Canonical route map
+## Implemented route map — Phase 8B
+
+### Entry and public routes
+
+| Route | Access | Purpose |
+|---|---|---|
+| `/` | Public resolver | Authenticated users redirect to `/spaces`; unauthenticated users redirect to `/login`. |
+| `/login` | Anonymous-only | Sign in and restore a validated internal return path. |
+| `/register` | Anonymous-only | Create an account, then open `/spaces`. |
+
+### Authenticated routes
+
+| Route | Navigation role | Purpose |
+|---|---|---|
+| `/research` | Primary | Real arXiv paper search with URL-backed query, page, and sort state. |
+| `/research/papers/:paperId` | Detail | Persisted paper metadata, abstract evidence, source links, summary, and explicit Save-to-Space workflow. |
+| `/spaces` | Primary | Authorized Research Space list. |
+| `/spaces/new` | Workflow | Create a Research Space. |
+| `/spaces/:spaceId` | Space default | Space overview and truthful continuation actions derived from current resources. |
+| `/spaces/:spaceId/saved-papers` | Space tab | Membership-authorized Saved Papers for this Space. |
+| `/spaces/:spaceId/knowledge` | Space tab | Document upload, indexing state, retrieval, and grounded questions for this Space. |
+| `/spaces/:spaceId/chat` | Space tab | Durable chat with authenticated realtime deltas. |
+| `/spaces/:spaceId/members` | Space tab | Current membership and admission/removal workflows. |
+| `/spaces/:spaceId/settings` | Owner-only Space tab | Rename and lifecycle controls. |
+| `/connections` | Primary | Connection requests and accepted connections. |
+
+Any route not listed above is absent from the current router. In particular, Overview as a global destination, Agents, Activity, Knowledge Bases, document detail, paper comparison, and user Settings remain planned.
+
+## Planned canonical route map
 
 ### Entry and public routes
 
@@ -95,7 +144,7 @@ Tabs use URL routes when a view should survive refresh or be shareable. Local ta
 
 Space-owned resources remain authorized by Research Space even when their detail URL is shorter. A stable document, knowledge base, paper cache record, task, or run ID can resolve its parent context server-side, then render `Space → Area → Resource` in the breadcrumb. This avoids deeply nested URLs while preserving the actual authorization boundary. Lists and create actions must still make the active space/filter explicit.
 
-## Route hierarchy
+## Planned route hierarchy
 
 ```mermaid
 flowchart TD

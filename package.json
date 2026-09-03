@@ -1,9 +1,9 @@
 {
   "name": "researchweave",
-  "version": "0.1.0",
+  "version": "0.8.1",
   "private": true,
   "type": "module",
-  "description": "Real-Time Research Collaboration & RAG Agent Platform",
+  "description": "Real-Time Research Collaboration & Grounded Knowledge Platform",
   "scripts": {
     "dev": "concurrently --kill-others --names client,server --prefix-colors cyan,green \"npm:dev:client\" \"npm:dev:server\"",
     "dev:client": "vite",

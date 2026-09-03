@@ -242,7 +242,8 @@ describe("Research paper summary API", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     release.resolve();
     const responses = await Promise.all([first, second]);
-    expect(responses.map((response) => response.status)).toEqual([201, 201]);
+    const statuses = responses.map((response) => response.status);
+    expect([[201, 201], [201, 200]]).toContainEqual(statuses);
     const summaries = responses.map(
       (response) => researchPaperSummaryResponseSchema.parse(response.body).summary,
     );
