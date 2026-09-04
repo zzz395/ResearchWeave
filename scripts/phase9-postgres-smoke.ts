@@ -3,9 +3,10 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promi
 import path from "node:path";
 import { tmpdir } from "node:os";
 
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
+import { z } from "zod";
 
 import { createDatabase } from "../server/db/client";
 import {
@@ -23,6 +24,13 @@ import {
 } from "../server/db/schema";
 import { AGENT_EXECUTION_LIMITS } from "../server/modules/agents/state";
 import { createDrizzleAgentRepository } from "../server/modules/agents/repository";
+import type {
+  AgentDecision,
+  AgentDecisionProviderInput,
+} from "../server/modules/agents/decision-provider";
+import { createAgentRunExecutor } from "../server/modules/agents/run-executor";
+import { agentToolExecutionResultSchema } from "../server/modules/agents/tools/contracts";
+import { createAgentToolRegistry } from "../server/modules/agents/tools/registry";
 
 const smokeDatabaseUrl = process.env.PHASE9_SMOKE_DATABASE_URL;
 if (!smokeDatabaseUrl) {
@@ -1215,6 +1223,383 @@ async function runRepositorySmoke(): Promise<void> {
   pass("Repository Space cascade cleanup");
 }
 
+async function runExecutorSmoke(): Promise<void> {
+  const repository = createDrizzleAgentRepository(database);
+  const executorSpaceId = "22000000-0000-4000-8000-000000000001";
+  let clock = new Date("2026-09-03T02:00:00.000Z");
+  let idCounter = 0;
+  const nextId = () => {
+    idCounter += 1;
+    return `a2000000-0000-4000-8000-${String(idCounter).padStart(12, "0")}`;
+  };
+
+  await database.db.insert(researchSpaces).values({
+    id: executorSpaceId,
+    name: "Phase 9 Executor Space",
+    description: null,
+    ownerId: OWNER_ID,
+    createdAt: clock,
+    updatedAt: clock,
+  });
+  await database.db.insert(spaceMembers).values({
+    spaceId: executorSpaceId,
+    userId: OWNER_ID,
+    role: "owner",
+    joinedAt: clock,
+  });
+
+  async function createAndClaim(index: number, leaseDurationMs = 60_000) {
+    const suffix = String(index).padStart(12, "0");
+    const taskId = `42000000-0000-4000-8000-${suffix}`;
+    const runId = `52000000-0000-4000-8000-${suffix}`;
+    const created = await repository.createTaskWithInitialRun({
+      taskId,
+      runId,
+      spaceId: executorSpaceId,
+      agentId: AGENT_ID,
+      actorUserId: OWNER_ID,
+      prompt: `Executor smoke task ${index}`,
+      clientRequestId: `92000000-0000-4000-8000-${suffix}`,
+      requestFingerprint: index.toString(16).padStart(64, "0"),
+      providerModel: "phase9-executor-smoke",
+      now: clock,
+    });
+    assert.equal(created.status, "created");
+    const claimed = await repository.claimRun({
+      leaseOwnerId: `93000000-0000-4000-8000-${suffix}`,
+      now: clock,
+      leaseDurationMs,
+    });
+    assert.equal(claimed.status, "claimed");
+    if (claimed.status !== "claimed") throw new Error("Expected Executor smoke claim.");
+    assert.equal(claimed.claim.run.id, runId);
+    return claimed.claim;
+  }
+
+  function registry(onExecute?: () => Promise<void>) {
+    return createAgentToolRegistry([{
+      name: "search_arxiv",
+      description: "Deterministic read-only Executor smoke Tool.",
+      argumentsSchema: z.object({ query: z.string().trim().min(1) }).strict(),
+      resultSchema: agentToolExecutionResultSchema,
+      isAvailable: () => true,
+      execute: async () => {
+        await onExecute?.();
+        return {
+          observation: { resultCount: 1, source: "deterministic-smoke" },
+          evidence: [{
+            kind: "arxiv_abstract" as const,
+            paperId: null,
+            canonicalArxivId: "2609.12345",
+            versionedArxivId: "2609.12345v1",
+            sourceVersion: 1,
+            title: "Executor Boundary Smoke",
+            url: "https://arxiv.org/abs/2609.12345v1",
+            excerpt: "Deterministic local evidence for the Executor smoke.",
+          }],
+        };
+      },
+    }]);
+  }
+
+  function executor(input: {
+    decisions: AgentDecision[];
+    repository?: Parameters<typeof createAgentRunExecutor>[0]["repository"];
+    toolRegistry?: ReturnType<typeof registry>;
+    observedInputs?: AgentDecisionProviderInput[];
+  }) {
+    const decisions = [...input.decisions];
+    return createAgentRunExecutor({
+      repository: input.repository ?? repository,
+      toolRegistry: input.toolRegistry ?? registry(),
+      decisionProvider: {
+        model: "phase9-executor-smoke",
+        decide: (providerInput) => {
+          input.observedInputs?.push(providerInput);
+          const decision = decisions.shift();
+          if (!decision) throw new Error("Missing scripted Executor smoke decision.");
+          return Promise.resolve(decision);
+        },
+      },
+      now: () => clock,
+      createId: nextId,
+    });
+  }
+
+  const toolDecision: AgentDecision = {
+    kind: "tool_call",
+    toolName: "search_arxiv",
+    arguments: { query: "executor smoke" },
+  };
+  const finalDecision: AgentDecision = {
+    kind: "final_answer",
+    result: { status: "answered", answer: "Executor result [E1]", evidenceIds: ["E1"] },
+  };
+  const insufficientDecision: AgentDecision = {
+    kind: "final_answer",
+    result: {
+      status: "insufficient_context",
+      answer: "Insufficient context.",
+      evidenceIds: [],
+    },
+  };
+
+  const successClaim = await createAndClaim(1);
+  const observedInputs: AgentDecisionProviderInput[] = [];
+  const successExecutor = executor({
+    decisions: [toolDecision, finalDecision],
+    observedInputs,
+  });
+  const success = await successExecutor.execute({
+    runId: successClaim.run.id,
+    leaseOwnerId: successClaim.run.leaseOwnerId!,
+    leaseGeneration: successClaim.run.leaseGeneration,
+    signal: new AbortController().signal,
+  });
+  assert.equal(success.status, "completed");
+  const successTrace = await repository.readRunTraceForMember(successClaim.run.id, OWNER_ID);
+  assert.equal(successTrace.status, "ok");
+  if (successTrace.status !== "ok") throw new Error("Expected completed Executor trace.");
+  assert.deepEqual(successTrace.record.steps.map((step) => step.kind), ["tool_call", "final_answer"]);
+  assert.deepEqual(successTrace.record.evidence.map((item) => item.evidenceKey), ["E1"]);
+  assert.equal(
+    successTrace.record.run.contextBytes,
+    new TextEncoder().encode(JSON.stringify(observedInputs[1]?.context)).byteLength,
+  );
+  const duplicate = await successExecutor.execute({
+    runId: successClaim.run.id,
+    leaseOwnerId: successClaim.run.leaseOwnerId!,
+    leaseGeneration: successClaim.run.leaseGeneration,
+    signal: new AbortController().signal,
+  });
+  assert.equal(duplicate.status, "stale");
+  const duplicateTrace = await repository.readRunTraceForMember(successClaim.run.id, OWNER_ID);
+  assert.equal(duplicateTrace.status, "ok");
+  if (duplicateTrace.status === "ok") assert.equal(duplicateTrace.record.steps.length, 2);
+  pass("Executor success, context accounting, and single durable final publication");
+
+  clock = new Date("2026-09-03T02:01:00.000Z");
+  const cancellationClaim = await createAndClaim(2);
+  const cancellationRegistry = registry(async () => {
+    const requested = await repository.cancelRun(cancellationClaim.run.id, OWNER_ID, clock);
+    assert.equal(requested.status, "cancellation_requested");
+  });
+  const cancellationExecutor = executor({
+    decisions: [toolDecision],
+    toolRegistry: cancellationRegistry,
+  });
+  const cancellation = await cancellationExecutor.execute({
+    runId: cancellationClaim.run.id,
+    leaseOwnerId: cancellationClaim.run.leaseOwnerId!,
+    leaseGeneration: cancellationClaim.run.leaseGeneration,
+    signal: new AbortController().signal,
+  });
+  assert.equal(cancellation.status, "cancelled");
+  const cancellationTrace = await repository.readRunTraceForMember(
+    cancellationClaim.run.id,
+    OWNER_ID,
+  );
+  assert.equal(cancellationTrace.status, "ok");
+  if (cancellationTrace.status === "ok") {
+    assert.deepEqual(cancellationTrace.record.steps.map((step) => step.status), ["cancelled"]);
+    assert.deepEqual(cancellationTrace.record.evidence, []);
+    assert.equal(cancellationTrace.record.run.contextBytes, 0);
+  }
+  pass("Executor cancellation after Tool return discards observation and Evidence");
+
+  clock = new Date("2026-09-03T02:02:00.000Z");
+  const staleClaim = await createAndClaim(3, 1_000);
+  clock = new Date(clock.getTime() + 2_000);
+  const replacement = await repository.claimRun({
+    leaseOwnerId: "93000000-0000-4000-8000-000000000099",
+    now: clock,
+    leaseDurationMs: 60_000,
+  });
+  assert.equal(replacement.status, "claimed");
+  if (replacement.status !== "claimed") throw new Error("Expected replacement claim.");
+  assert.equal(replacement.claim.run.id, staleClaim.run.id);
+  assert.equal(replacement.claim.run.leaseGeneration, staleClaim.run.leaseGeneration + 1);
+  const staleResult = await executor({ decisions: [insufficientDecision] }).execute({
+    runId: staleClaim.run.id,
+    leaseOwnerId: staleClaim.run.leaseOwnerId!,
+    leaseGeneration: staleClaim.run.leaseGeneration,
+    signal: new AbortController().signal,
+  });
+  assert.equal(staleResult.status, "stale");
+  const replacementFinish = await executor({ decisions: [insufficientDecision] }).execute({
+    runId: replacement.claim.run.id,
+    leaseOwnerId: replacement.claim.run.leaseOwnerId!,
+    leaseGeneration: replacement.claim.run.leaseGeneration,
+    signal: new AbortController().signal,
+  });
+  assert.equal(replacementFinish.status, "completed");
+  pass("Executor rejects the old lease generation after a higher-generation claim");
+
+  clock = new Date("2026-09-03T02:03:00.000Z");
+  const recoveryClaim = await createAndClaim(4, 1_000);
+  const recoveryStepId = "62000000-0000-4000-8000-000000000004";
+  const reserved = await repository.reserveStep({
+    runId: recoveryClaim.run.id,
+    leaseOwnerId: recoveryClaim.run.leaseOwnerId!,
+    leaseGeneration: recoveryClaim.run.leaseGeneration,
+    stepId: recoveryStepId,
+    toolName: "search_arxiv",
+    safeArguments: { query: "recover same step" },
+    now: clock,
+  });
+  assert.equal(reserved.status, "reserved");
+  clock = new Date(clock.getTime() + 2_000);
+  const recoveryReclaim = await repository.claimRun({
+    leaseOwnerId: "93000000-0000-4000-8000-000000000104",
+    now: clock,
+    leaseDurationMs: 60_000,
+  });
+  assert.equal(recoveryReclaim.status, "claimed");
+  if (recoveryReclaim.status !== "claimed") throw new Error("Expected recovery claim.");
+  const recovery = await executor({ decisions: [finalDecision] }).execute({
+    runId: recoveryReclaim.claim.run.id,
+    leaseOwnerId: recoveryReclaim.claim.run.leaseOwnerId!,
+    leaseGeneration: recoveryReclaim.claim.run.leaseGeneration,
+    signal: new AbortController().signal,
+  });
+  assert.equal(recovery.status, "completed");
+  const recoveryTrace = await repository.readRunTraceForMember(
+    recoveryReclaim.claim.run.id,
+    OWNER_ID,
+  );
+  assert.equal(recoveryTrace.status, "ok");
+  if (recoveryTrace.status === "ok") {
+    const toolSteps = recoveryTrace.record.steps.filter((step) => step.kind === "tool_call");
+    assert.equal(toolSteps.length, 1);
+    assert.equal(toolSteps[0]?.id, recoveryStepId);
+    assert.equal(toolSteps[0]?.executionCount, 2);
+  }
+  pass("Executor recovery reuses the same logical Tool Step and increments executionCount");
+
+  clock = new Date("2026-09-03T02:04:00.000Z");
+  const invalidClaim = await createAndClaim(5);
+  const invalidFinal = await executor({ decisions: [finalDecision] }).execute({
+    runId: invalidClaim.run.id,
+    leaseOwnerId: invalidClaim.run.leaseOwnerId!,
+    leaseGeneration: invalidClaim.run.leaseGeneration,
+    signal: new AbortController().signal,
+  });
+  assert.deepEqual(invalidFinal, {
+    status: "failed",
+    runId: invalidClaim.run.id,
+    errorCode: "agent_invalid_final_answer",
+  });
+  const invalidRecord = await repository.readRunForMember(invalidClaim.run.id, OWNER_ID);
+  assert.equal(invalidRecord.status, "ok");
+  if (invalidRecord.status === "ok") {
+    assert.equal(invalidRecord.record.record.errorCode, "agent_invalid_final_answer");
+    assert.deepEqual(invalidRecord.record.finalEvidenceIds, []);
+  }
+  pass("Executor live Evidence validation rejects absent and cross-Run Evidence identifiers");
+
+  clock = new Date("2026-09-03T02:05:00.000Z");
+  const failedEvidenceClaim = await createAndClaim(6);
+  const failedStepId = "62000000-0000-4000-8000-000000000006";
+  const failedReserved = await repository.reserveStep({
+    runId: failedEvidenceClaim.run.id,
+    leaseOwnerId: failedEvidenceClaim.run.leaseOwnerId!,
+    leaseGeneration: failedEvidenceClaim.run.leaseGeneration,
+    stepId: failedStepId,
+    toolName: "search_arxiv",
+    safeArguments: { query: "failed evidence origin" },
+    now: clock,
+  });
+  assert.equal(failedReserved.status, "reserved");
+  const failedContextBytes = new TextEncoder().encode(
+    JSON.stringify({ taskPrompt: failedEvidenceClaim.task.prompt, completedToolCalls: [] }),
+  ).byteLength;
+  const failedStep = await repository.failStep({
+    runId: failedEvidenceClaim.run.id,
+    leaseOwnerId: failedEvidenceClaim.run.leaseOwnerId!,
+    leaseGeneration: failedEvidenceClaim.run.leaseGeneration,
+    stepId: failedStepId,
+    errorCode: "research_upstream_timeout",
+    contextBytes: failedContextBytes,
+    now: clock,
+  });
+  assert.equal(failedStep.status, "failed");
+  await database.db.insert(agentRunEvidence).values({
+    id: "a3000000-0000-4000-8000-000000000006",
+    runId: failedEvidenceClaim.run.id,
+    stepId: failedStepId,
+    evidenceKey: "E1",
+    kind: "arxiv_abstract",
+    paperId: null,
+    canonicalArxivId: "2609.54321",
+    versionedArxivId: "2609.54321v1",
+    sourceVersion: 1,
+    sourceTitle: "Invalid Failed Origin",
+    sourceUrl: "https://arxiv.org/abs/2609.54321v1",
+    excerpt: "Must not become final Evidence.",
+    createdAt: clock,
+  });
+  const failedOrigin = await executor({ decisions: [finalDecision] }).execute({
+    runId: failedEvidenceClaim.run.id,
+    leaseOwnerId: failedEvidenceClaim.run.leaseOwnerId!,
+    leaseGeneration: failedEvidenceClaim.run.leaseGeneration,
+    signal: new AbortController().signal,
+  });
+  assert.deepEqual(failedOrigin, {
+    status: "failed",
+    runId: failedEvidenceClaim.run.id,
+    errorCode: "agent_persistence_failed",
+  });
+  pass("Executor rejects Evidence originating from a failed Tool Step");
+
+  clock = new Date("2026-09-03T02:06:00.000Z");
+  const completionRaceClaim = await createAndClaim(7);
+  const completionRaceRepository = {
+    ...repository,
+    completeToolStepWithEvidence: async (
+      input: Parameters<typeof repository.completeToolStepWithEvidence>[0],
+    ) => {
+      await database.db
+        .delete(spaceMembers)
+        .where(
+          and(
+            eq(spaceMembers.spaceId, executorSpaceId),
+            eq(spaceMembers.userId, OWNER_ID),
+          ),
+        );
+      return repository.completeToolStepWithEvidence(input);
+    },
+  };
+  const completionRace = await executor({
+    decisions: [toolDecision],
+    repository: completionRaceRepository,
+  }).execute({
+    runId: completionRaceClaim.run.id,
+    leaseOwnerId: completionRaceClaim.run.leaseOwnerId!,
+    leaseGeneration: completionRaceClaim.run.leaseGeneration,
+    signal: new AbortController().signal,
+  });
+  assert.deepEqual(completionRace, {
+    status: "failed",
+    runId: completionRaceClaim.run.id,
+    errorCode: "agent_space_access_revoked",
+  });
+  const [completionRaceRun] = await database.db
+    .select()
+    .from(agentRuns)
+    .where(eq(agentRuns.id, completionRaceClaim.run.id));
+  const [completionRaceStep] = await database.db
+    .select()
+    .from(agentRunSteps)
+    .where(eq(agentRunSteps.runId, completionRaceClaim.run.id));
+  assert.equal(completionRaceRun?.status, "failed");
+  assert.equal(completionRaceRun?.errorCode, "agent_space_access_revoked");
+  assert.equal(completionRaceStep?.status, "failed");
+  assert.equal(completionRaceStep?.errorCode, "agent_space_access_revoked");
+  pass("Executor durably terminalizes an access revocation at Tool completion");
+
+  await database.db.delete(researchSpaces).where(eq(researchSpaces.id, executorSpaceId));
+}
+
 try {
   await assertFreshDisposableTarget();
   await migrateFromPhase8Baseline();
@@ -1224,6 +1609,7 @@ try {
   await runClaimPlanSmoke();
   await runAttributionAndCascadeSmoke();
   await runRepositorySmoke();
+  await runExecutorSmoke();
 } finally {
   await database.close();
   await raw.end({ timeout: 5 });
