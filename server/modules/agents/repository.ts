@@ -34,6 +34,7 @@ import {
   type AgentRunStepRecord,
   type AgentTaskRecord,
 } from "../../db/schema";
+import type { AgentEvidenceDraft } from "./tools/contracts";
 
 type JsonObject = Record<string, unknown>;
 type TerminalRunStatus = Extract<AgentRunStatus, "completed" | "failed" | "cancelled">;
@@ -217,31 +218,6 @@ export type ReserveAgentStepResult =
         | "step_limit_exceeded"
         | "tool_call_limit_exceeded"
         | "incomplete_step";
-    };
-
-export type AgentEvidenceDraft =
-  | {
-      id?: string;
-      kind: "arxiv_abstract";
-      paperId: string | null;
-      canonicalArxivId: string;
-      versionedArxivId: string;
-      sourceVersion: number;
-      title: string;
-      url: string;
-      excerpt: string;
-    }
-  | {
-      id?: string;
-      kind: "knowledge_chunk";
-      documentId: string | null;
-      originalFilename: string;
-      contentHash: string;
-      ordinal: number;
-      pageNumber: number | null;
-      startOffset: number;
-      endOffset: number;
-      excerpt: string;
     };
 
 export interface CompleteAgentToolStepInput extends AgentWorkerFence {
