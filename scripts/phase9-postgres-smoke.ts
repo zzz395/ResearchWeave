@@ -23,6 +23,7 @@ import {
   spaceMembers,
   users,
 } from "../server/db/schema";
+import { AppError } from "../server/middleware/app-error";
 import { AGENT_EXECUTION_LIMITS } from "../server/modules/agents/state";
 import { createDrizzleAgentRepository } from "../server/modules/agents/repository";
 import type {
@@ -30,6 +31,8 @@ import type {
   AgentDecisionProviderInput,
 } from "../server/modules/agents/decision-provider";
 import { createAgentRunExecutor } from "../server/modules/agents/run-executor";
+import { createAgentRuntime } from "../server/modules/agents/runtime";
+import { createAgentService } from "../server/modules/agents/service";
 import { createAgentWorker } from "../server/modules/agents/worker";
 import { agentToolExecutionResultSchema } from "../server/modules/agents/tools/contracts";
 import { createAgentToolRegistry } from "../server/modules/agents/tools/registry";
@@ -2084,6 +2087,161 @@ async function runWorkerSmoke(): Promise<void> {
   await database.db.delete(researchSpaces).where(eq(researchSpaces.id, workerSpaceId));
 }
 
+async function runRuntimeLifecycleSmoke(): Promise<void> {
+  const repository = createDrizzleAgentRepository(database);
+  const runtimeSpaceId = "24000000-0000-4000-8000-000000000001";
+  const runtimeLogger = pino({ level: "silent" });
+  const decisions: AgentDecision[] = [
+    {
+      kind: "tool_call",
+      toolName: "search_arxiv",
+      arguments: { query: "runtime lifecycle" },
+    },
+    {
+      kind: "final_answer",
+      result: {
+        status: "answered",
+        answer: "Runtime lifecycle result [E1]",
+        evidenceIds: ["E1"],
+      },
+    },
+  ];
+  const toolRegistry = createAgentToolRegistry([{
+    name: "search_arxiv",
+    description: "Deterministic read-only runtime lifecycle Tool.",
+    argumentsSchema: z.object({ query: z.string().trim().min(1) }).strict(),
+    resultSchema: agentToolExecutionResultSchema,
+    isAvailable: () => true,
+    execute: () => Promise.resolve({
+      observation: { resultCount: 1 },
+      evidence: [{
+        kind: "arxiv_abstract" as const,
+        paperId: null,
+        canonicalArxivId: "2609.24680",
+        versionedArxivId: "2609.24680v1",
+        sourceVersion: 1,
+        title: "Production Runtime Lifecycle Smoke",
+        url: "https://arxiv.org/abs/2609.24680v1",
+        excerpt: "Durable evidence created through the production runtime lifecycle boundary.",
+      }],
+    }),
+  }]);
+  const decisionProvider = {
+    model: "phase9-runtime-smoke",
+    decide: () => {
+      const decision = decisions.shift();
+      return decision
+        ? Promise.resolve(decision)
+        : Promise.reject(new Error("Missing scripted runtime lifecycle decision."));
+    },
+  };
+  const executor = createAgentRunExecutor({
+    repository,
+    decisionProvider,
+    toolRegistry,
+  });
+  const worker = createAgentWorker({
+    repository,
+    executor,
+    logger: runtimeLogger,
+    timing: {
+      idlePollMs: 20,
+      leaseDurationMs: 400,
+      heartbeatIntervalMs: 50,
+      heartbeatRetryMs: 20,
+      leaseSafetyMarginMs: 100,
+      shutdownGraceMs: 100,
+      shutdownSettleMs: 100,
+    },
+    createId: () => "96000000-0000-4000-8000-000000000001",
+  });
+  const runtime = createAgentRuntime({
+    configured: true,
+    providerModel: decisionProvider.model,
+    worker,
+  });
+  const service = createAgentService(repository, runtime);
+
+  await database.db.insert(researchSpaces).values({
+    id: runtimeSpaceId,
+    name: "Phase 9 Runtime Lifecycle Space",
+    description: null,
+    ownerId: OWNER_ID,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  await database.db.insert(spaceMembers).values({
+    spaceId: runtimeSpaceId,
+    userId: OWNER_ID,
+    role: "owner",
+    joinedAt: new Date(),
+  });
+
+  try {
+    assert.deepEqual(runtime.getSnapshot(), {
+      ready: false,
+      reason: "runtime_unavailable",
+    });
+    await assert.rejects(
+      service.createTask(runtimeSpaceId, OWNER_ID, {
+        agentId: AGENT_ID,
+        prompt: "Must not be accepted before runtime startup.",
+        clientRequestId: "97000000-0000-4000-8000-000000000001",
+      }),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.statusCode === 503 &&
+        error.code === "agent_runtime_unavailable",
+    );
+
+    await runtime.start();
+    assert.deepEqual(runtime.getSnapshot(), {
+      ready: true,
+      providerModel: "phase9-runtime-smoke",
+    });
+    const created = await service.createTask(runtimeSpaceId, OWNER_ID, {
+      agentId: AGENT_ID,
+      prompt: "Exercise the production runtime lifecycle.",
+      clientRequestId: "97000000-0000-4000-8000-000000000002",
+    });
+    assert.equal(created.created, true);
+
+    const timeoutAt = Date.now() + 5_000;
+    let completed = await service.getRun(created.run.id, OWNER_ID);
+    while (completed.run.status !== "completed" && Date.now() < timeoutAt) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      completed = await service.getRun(created.run.id, OWNER_ID);
+    }
+    assert.equal(completed.run.status, "completed");
+    assert.deepEqual(completed.run.finalResult, {
+      status: "answered",
+      answer: "Runtime lifecycle result [E1]",
+      evidenceIds: ["E1"],
+    });
+
+    await runtime.stop();
+    assert.deepEqual(runtime.getSnapshot(), {
+      ready: false,
+      reason: "runtime_unavailable",
+    });
+    await assert.rejects(
+      service.createTask(runtimeSpaceId, OWNER_ID, {
+        agentId: AGENT_ID,
+        prompt: "Must not be accepted after runtime shutdown.",
+        clientRequestId: "97000000-0000-4000-8000-000000000003",
+      }),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.statusCode === 503 &&
+        error.code === "agent_runtime_unavailable",
+    );
+    pass("Agent Runtime lifecycle exposes live readiness and durably executes through AgentService");
+  } finally {
+    await runtime.stop();
+    await database.db.delete(researchSpaces).where(eq(researchSpaces.id, runtimeSpaceId));
+  }
+}
+
 try {
   await assertFreshDisposableTarget();
   await migrateFromPhase8Baseline();
@@ -2095,6 +2253,7 @@ try {
   await runRepositorySmoke();
   await runExecutorSmoke();
   await runWorkerSmoke();
+  await runRuntimeLifecycleSmoke();
 } finally {
   await database.close();
   await raw.end({ timeout: 5 });

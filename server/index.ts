@@ -7,6 +7,7 @@ import { createApp } from "./app";
 import { loadEnvironment } from "./config/env";
 import { createLogger } from "./config/logger";
 import { createDatabase } from "./db/client";
+import { OpenAICompatibleAgentDecisionProvider } from "./integrations/agent-decision/openai-compatible-provider";
 import { ArxivClient } from "./integrations/arxiv/client";
 import { OpenAICompatibleDocumentEmbeddingGenerator } from "./integrations/document-embedding/openai-compatible-document-embedding-generator";
 import { createDocumentTextExtractor } from "./integrations/document-extraction/document-text-extractor";
@@ -14,10 +15,14 @@ import { LocalFilesystemDocumentStorage } from "./integrations/document-storage/
 import { createDocumentUploadMiddleware } from "./integrations/document-upload/middleware";
 import { OpenAICompatibleGroundedAnswerGenerator } from "./integrations/grounded-answer/openai-compatible-generator";
 import { OpenAICompatibleResearchSummaryGenerator } from "./integrations/research-summary/openai-compatible-generator";
+import { createDrizzleAgentRepository } from "./modules/agents/repository";
+import { createAgentRunExecutor } from "./modules/agents/run-executor";
+import { createAgentRuntime, type AgentRuntime } from "./modules/agents/runtime";
+import { createAgentService } from "./modules/agents/service";
+import { createResearchAgentToolRegistry } from "./modules/agents/tools/registry";
+import { createAgentWorker } from "./modules/agents/worker";
 import { createDrizzleChatRepository } from "./modules/chat/repository";
 import { createChatService } from "./modules/chat/service";
-import { createDrizzleAgentRepository } from "./modules/agents/repository";
-import { createAgentService } from "./modules/agents/service";
 import { createDrizzleConnectionRepository } from "./modules/connections/repository";
 import { createConnectionService } from "./modules/connections/service";
 import { createDrizzleDocumentRepository } from "./modules/documents/repository";
@@ -42,17 +47,16 @@ import { createSemanticRetrievalService } from "./modules/retrieval/service";
 import { createDrizzleSpaceRepository } from "./modules/spaces/repository";
 import { createSpaceService } from "./modules/spaces/service";
 import { attachRealtimeGateway } from "./realtime/gateway";
-import { attachDocumentWorkerStartupLifecycle } from "./startup-lifecycle";
 import { RealtimeHub } from "./realtime/hub";
+import {
+  ApplicationLifecycleStopError,
+  attachApplicationWorkerStartupLifecycle,
+} from "./startup-lifecycle";
 
 const environment = loadEnvironment();
 const logger = createLogger(environment);
 const database = createDatabase(environment.DATABASE_URL);
 const realtimeHub = new RealtimeHub();
-const agentService = createAgentService(
-  createDrizzleAgentRepository(database),
-  { getSnapshot: () => ({ ready: false, reason: "runtime_unavailable" }) },
-);
 const authService = createAuthService(createDrizzleAuthRepository(database), {
   sessionEnded: (tokenHash) => realtimeHub.closeSession(tokenHash),
 });
@@ -119,6 +123,49 @@ const groundedAnswerService = createGroundedAnswerService(
   semanticRetrievalRepository,
   groundedAnswerGenerator,
 );
+const agentRepository = createDrizzleAgentRepository(database);
+let agentRuntime: AgentRuntime;
+if (environment.LLM_BASE_URL && environment.LLM_API_KEY && environment.LLM_MODEL) {
+  try {
+    const decisionProvider = new OpenAICompatibleAgentDecisionProvider({
+      baseUrl: environment.LLM_BASE_URL,
+      apiKey: environment.LLM_API_KEY,
+      model: environment.LLM_MODEL,
+    });
+    const toolRegistry = createResearchAgentToolRegistry({
+      spaceService,
+      researchService,
+      semanticRetrievalService,
+      groundedAnswerService,
+    });
+    const executor = createAgentRunExecutor({
+      repository: agentRepository,
+      decisionProvider,
+      toolRegistry,
+    });
+    const worker = createAgentWorker({
+      repository: agentRepository,
+      executor,
+      logger,
+    });
+    agentRuntime = createAgentRuntime({
+      configured: true,
+      providerModel: decisionProvider.model,
+      worker,
+    });
+  } catch (error: unknown) {
+    logger.fatal(
+      { errorType: error instanceof Error ? error.name : "UnknownError" },
+      "configured Agent runtime composition failed",
+    );
+    process.exitCode = 1;
+    await database.close();
+    throw new Error("Configured Agent runtime composition failed.", { cause: error });
+  }
+} else {
+  agentRuntime = createAgentRuntime({ configured: false });
+}
+const agentService = createAgentService(agentRepository, agentRuntime);
 const documentIndexingWorker = new DocumentIndexingWorker({
   repository: documentRepository,
   storage: documentStorage,
@@ -154,22 +201,35 @@ const realtimeGateway = attachRealtimeGateway({
   hub: realtimeHub,
 });
 
-const documentWorkerLifecycle = attachDocumentWorkerStartupLifecycle(server, {
-  startWorker: () => documentIndexingWorker.start(),
-  stopWorker: () => documentIndexingWorker.stop(),
+const applicationWorkerLifecycle = attachApplicationWorkerStartupLifecycle(server, {
+  components: [
+    {
+      name: "document indexing worker",
+      start: () => documentIndexingWorker.start(),
+      stop: () => documentIndexingWorker.stop(),
+    },
+    {
+      name: "Agent runtime",
+      stopWhileStarting: true,
+      start: () => agentRuntime.start(),
+      stop: () => agentRuntime.stop(),
+    },
+  ],
   onServerError: (error) => {
     logger.fatal({ errorType: error.name }, "HTTP server failed");
     process.exitCode = 1;
+    void shutdown("http_server_error");
   },
-  onWorkerStartError: (error) => {
+  onComponentStartError: (componentName, error) => {
     logger.fatal(
-      { errorType: error instanceof Error ? error.name : "UnknownError" },
-      "document indexing worker failed to start",
+      {
+        component: componentName,
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      },
+      "application worker component failed to start",
     );
     process.exitCode = 1;
-    if (server.listening) {
-      server.close();
-    }
+    void shutdown("worker_startup_failure");
   },
 });
 
@@ -177,20 +237,69 @@ server.listen(environment.PORT, "0.0.0.0", () => {
   logger.info({ port: environment.PORT }, "ResearchWeave API listening");
 });
 
-let shuttingDown = false;
+type ShutdownReason = NodeJS.Signals | "http_server_error" | "worker_startup_failure";
 
-async function shutdown(signal: NodeJS.Signals) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info({ signal }, "graceful shutdown started");
+let shutdownPromise: Promise<void> | null = null;
 
-  await documentWorkerLifecycle.shutdownWorker();
-  await realtimeGateway.close();
-  await new Promise<void>((resolve) => {
-    server.close(() => resolve());
-  });
-  await database.close();
-  logger.info("graceful shutdown completed");
+function errorType(error: unknown): string {
+  return error instanceof Error ? error.name : "UnknownError";
+}
+
+function lifecycleStopFailures(error: unknown) {
+  if (!(error instanceof AggregateError)) return undefined;
+  return error.errors.map((failure: unknown) =>
+    failure instanceof ApplicationLifecycleStopError
+      ? {
+          component: failure.componentName,
+          errorType: errorType(failure.cause),
+        }
+      : { component: "unknown", errorType: errorType(failure) },
+  );
+}
+
+function shutdown(reason: ShutdownReason): Promise<void> {
+  if (shutdownPromise) return shutdownPromise;
+  logger.info({ reason }, "graceful shutdown started");
+
+  shutdownPromise = (async () => {
+    let failed = false;
+    const closeResource = async (resource: string, close: () => Promise<void>) => {
+      try {
+        await close();
+      } catch (error: unknown) {
+        failed = true;
+        process.exitCode = 1;
+        logger.error(
+          {
+            resource,
+            errorType: errorType(error),
+            lifecycleFailures: lifecycleStopFailures(error),
+          },
+          "graceful shutdown resource failed",
+        );
+      }
+    };
+
+    await closeResource("application workers", () =>
+      applicationWorkerLifecycle.shutdownComponents(),
+    );
+    await closeResource("realtime gateway", () => realtimeGateway.close());
+    await closeResource(
+      "HTTP server",
+      () =>
+        new Promise<void>((resolve, reject) => {
+          if (!server.listening) {
+            resolve();
+            return;
+          }
+          server.close((error) => (error ? reject(error) : resolve()));
+        }),
+    );
+    await closeResource("database", () => database.close());
+
+    logger.info({ failed }, "graceful shutdown completed");
+  })();
+  return shutdownPromise;
 }
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
