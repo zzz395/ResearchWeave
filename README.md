@@ -6,7 +6,7 @@ ResearchWeave is a TypeScript research workspace for small teams. It combines se
 
 ## Current status
 
-ResearchWeave has completed the implementation of **Phase 9 — Tool-Calling Agent & Execution Trace**, including the Phase 9C-7 Agent UI and navigation. The final checkpoint and release closure remain pending for the prepared `0.9.0` package metadata; no `v0.9.0` tag has been created.
+ResearchWeave has completed **Phase 9 — Tool-Calling Agent & Execution Trace**, including the Phase 9C-7 Agent UI and navigation, and the Phase 9 baseline is released as `v0.9.0`. **Phase 10 — Integration, Evaluation & Portfolio Polish** is the next planned product phase and has not started.
 
 Implemented through Phase 9:
 

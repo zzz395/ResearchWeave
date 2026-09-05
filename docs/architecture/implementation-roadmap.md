@@ -4,7 +4,7 @@
 
 ResearchWeave progresses from a secure engineering foundation through collaboration, real academic discovery, durable document indexing, grounded knowledge, integrated workflows, and bounded agent orchestration. Every completed phase must represent verifiable behavior backed by durable state or a real external integration; fixtures and timers never stand in for product capability.
 
-The product implementation baseline is complete through **Phase 9 — Tool-Calling Agent & Execution Trace**, including Phase 9C-7. Final checkpoint validation and release closure remain pending; Phase 10 is the next planned product phase and has not started.
+The product implementation baseline is complete through **Phase 9 — Tool-Calling Agent & Execution Trace**, including Phase 9C-7, and is released as `v0.9.0`. Phase 10 is the next planned product phase and has not started.
 
 ## Architecture & Product Definition — Completed
 
@@ -195,7 +195,7 @@ The product implementation baseline is complete through **Phase 9 — Tool-Calli
 
 Phase 8C changes repository documentation and delivery automation only. It does not add Agent behavior or change runtime APIs, database schemas, authorization, or realtime architecture.
 
-## Phase 9 — Tool-Calling Agent & Execution Trace — Implementation Complete; Release Closure Pending
+## Phase 9 — Tool-Calling Agent & Execution Trace — Completed with v0.9.0
 
 **Goal:** Orchestrate existing Research and Knowledge services through real, bounded tools with a durable execution trace.
 
@@ -209,7 +209,7 @@ Phase 8C changes repository documentation and delivery automation only. It does 
 
 The initial tools must wrap capabilities that already exist and are tested. `search_arxiv`, `search_knowledge_base`, and grounded knowledge answering are eligible. Document summarization and paper comparison remain excluded until dedicated services exist; Agent code must not duplicate those domains.
 
-Phase 9 implements one system-managed Research Agent, a production lifecycle-owned Worker, REST-polled client routes for definitions, Tasks, Runs, traces, cancellation, retries, and server-validated evidence, plus a PostgreSQL runtime acceptance gate. The Phase 9C-7 implementation is complete; final checkpoint validation, release closure, and the `v0.9.0` tag remain pending. Package metadata is prepared at `0.9.0`.
+Phase 9 implements one system-managed Research Agent, a production lifecycle-owned Worker, REST-polled client routes for definitions, Tasks, Runs, traces, cancellation, retries, and server-validated evidence, plus a PostgreSQL runtime acceptance gate. The Phase 9C-7 implementation is complete, final checkpoint validation passed, and release closure is complete. The `v0.9.0` tag records the completed Phase 9 baseline.
 
 **Acceptance criteria**
 

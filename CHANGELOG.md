@@ -2,9 +2,9 @@
 
 All notable changes to ResearchWeave are documented in this file.
 
-## [0.9.0] - Unreleased
+## [0.9.0] - 2026-09-05
 
-Phase 9 implementation, including Phase 9C-7, is complete. The `0.9.0` package metadata is prepared while final checkpoint validation, release closure, and the `v0.9.0` tag remain pending.
+Phase 9 implementation, including Phase 9C-7, is complete. Final checkpoint validation passed, release closure is complete, and the baseline is established as `v0.9.0`.
 
 ### Added
 
@@ -18,7 +18,7 @@ Phase 9 implementation, including Phase 9C-7, is complete. The `0.9.0` package m
 
 - Added Agents to Workspace navigation and URL-backed task filters, Run deep links, and Knowledge document citations.
 - Expanded authorization regression coverage across all Agent Task and Run reads and commands after Space access revocation.
-- Advanced the implementation roadmap to the completed Phase 9 implementation and prepared the `0.9.0` package metadata for pending release closure.
+- Advanced the implementation roadmap through the completed Phase 9 release closure at `v0.9.0`.
 
 ### Runtime impact
 
