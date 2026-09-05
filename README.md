@@ -20,7 +20,7 @@ Implemented through Phase 8B:
 - responsive desktop, tablet, and mobile navigation with accessible focus, status, error, and realtime-announcement behavior
 - shared Zod contracts, versioned Drizzle migrations, structured errors, Origin checks, rate limits, and automated authorization coverage
 
-ResearchWeave does **not** yet implement the Agent runtime, execution traces, unified Activity, or paper comparison. These remain planned work and are not represented by placeholder routes or fabricated data.
+The backend Agent runtime, durable execution, and trace APIs are production-active when the complete provider configuration is present. Agent UI/navigation, unified Activity, paper comparison, and Phase 9C-7 final acceptance are not yet complete; no final Phase 9 completion is claimed here.
 
 ## Development setup
 
@@ -42,7 +42,9 @@ The Vite client runs at `http://localhost:5173`. The Express API runs at `http:/
 
 ### Optional model-backed capabilities
 
-`LLM_BASE_URL` and `LLM_API_KEY` enable the OpenAI-compatible embedding adapter used for document indexing and semantic retrieval. Adding `LLM_MODEL` also enables abstract-based paper summaries and grounded answer generation.
+`LLM_BASE_URL` and `LLM_API_KEY` enable the OpenAI-compatible embedding adapter used for document indexing and semantic retrieval. Adding `LLM_MODEL` also enables abstract-based paper summaries, grounded answer generation, and the production Agent runtime.
+
+The Agent runtime is configured only when all three `LLM_*` values are present. With the complete triple, the API starts one Agent Worker after HTTP listening and reports Agent availability only after its initial database claim probe succeeds. With missing or partial configuration, the application still starts, no Agent Worker is constructed, and Agent definitions report `provider_unconfigured`. Agent availability does not change the database-only `/api/v1/health` result.
 
 These values are server-only. If they are absent, the corresponding operations return explicit unavailable or failed states rather than generated fallback content. Original documents are stored under `DOCUMENT_STORAGE_DIR` and are never served as a public directory.
 
@@ -63,6 +65,10 @@ Saved Papers are explicit Space-scoped records. Saving a paper does not claim th
 Space members can upload PDF, Markdown, or TXT documents. A durable worker extracts text, creates deterministic chunks and embeddings, and exposes queued, processing, ready, and failed states. Reindexing preserves the last good active index until replacement succeeds.
 
 Semantic retrieval filters all vector queries by current Space membership and compatible active indexes. Grounded answers cite only the authorized chunks supplied to the model and report insufficient context instead of inventing an answer.
+
+### Agents
+
+The backend exposes the system Research Agent, Space-scoped task submission, durable Runs, retries, cancellation, and execution traces. The production Worker uses PostgreSQL claims, leases, heartbeats, and fencing; local process shutdown leaves interrupted work recoverable through lease expiry rather than persisting a cancellation or failure. There is not yet an Agent product route or navigation entry in the client.
 
 ## Current application routes
 
@@ -129,6 +135,16 @@ DELETE /api/v1/spaces/:spaceId/documents/:documentId
 
 POST /api/v1/spaces/:spaceId/knowledge/retrieve
 POST /api/v1/spaces/:spaceId/knowledge/ask
+
+GET  /api/v1/agents
+GET  /api/v1/agents/:agentId
+POST /api/v1/spaces/:spaceId/agent-tasks
+GET  /api/v1/spaces/:spaceId/agent-tasks
+GET  /api/v1/agent-tasks/:taskId
+POST /api/v1/agent-tasks/:taskId/runs
+GET  /api/v1/agent-runs/:runId
+GET  /api/v1/agent-runs/:runId/steps
+POST /api/v1/agent-runs/:runId/cancel
 ```
 
 ## Quality and production commands
@@ -151,9 +167,12 @@ npm run test:phase6:postgres
 
 $env:PHASE7A_SMOKE_DATABASE_URL = "postgresql://.../phase7a_smoke"
 npm run test:phase7a:postgres
+
+$env:PHASE9_SMOKE_DATABASE_URL = "postgresql://.../phase9_smoke"
+npm run test:phase9:postgres
 ```
 
-The smoke scripts refuse to use the normal `DATABASE_URL` or a non-empty target. CI provisions isolated databases for both checks.
+The smoke scripts refuse to use the normal `DATABASE_URL` or a non-empty target. CI provisions isolated databases for all three checks, including the Phase 9 runtime lifecycle gate.
 
 Database migration commands:
 

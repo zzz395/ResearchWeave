@@ -1,7 +1,8 @@
 import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import { describe, expect, it, vi } from "vitest";
-import { attachDocumentWorkerStartupLifecycle } from "../../server/startup-lifecycle";
+
+import { attachApplicationWorkerStartupLifecycle } from "../../server/startup-lifecycle";
 
 function createDeferred(): {
   promise: Promise<void>;
@@ -18,165 +19,294 @@ function createDeferred(): {
 }
 
 async function closeServer(server: Server): Promise<void> {
-  if (!server.listening) {
-    return;
-  }
-
+  if (!server.listening) return;
   await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-
-      resolve();
-    });
+    server.close((error) => (error ? reject(error) : resolve()));
   });
 }
 
-describe("document worker startup lifecycle", () => {
-  it("starts the worker once after the HTTP server is listening", async () => {
+function component(name: string, events: string[]) {
+  return {
+    name,
+    start: vi.fn(() => {
+      events.push(`start:${name}`);
+      return Promise.resolve();
+    }),
+    stop: vi.fn(() => {
+      events.push(`stop:${name}`);
+      return Promise.resolve();
+    }),
+  };
+}
+
+describe("application worker startup lifecycle", () => {
+  it("starts components once and sequentially after HTTP listening", async () => {
     const server = createServer();
-    const startWorker = vi.fn().mockResolvedValue(undefined);
-    const stopWorker = vi.fn().mockResolvedValue(undefined);
-    const onServerError = vi.fn();
-    const onWorkerStartError = vi.fn();
+    const events: string[] = [];
+    const firstStart = createDeferred();
+    const first = {
+      name: "document worker",
+      start: vi.fn(async () => {
+        events.push("start:document");
+        await firstStart.promise;
+        events.push("ready:document");
+      }),
+      stop: vi.fn().mockResolvedValue(undefined),
+    };
+    const second = component("Agent runtime", events);
 
     try {
-      attachDocumentWorkerStartupLifecycle(server, {
-        startWorker,
-        stopWorker,
-        onServerError,
-        onWorkerStartError,
+      attachApplicationWorkerStartupLifecycle(server, {
+        components: [first, second],
+        onServerError: vi.fn(),
+        onComponentStartError: vi.fn(),
       });
+      expect(first.start).not.toHaveBeenCalled();
 
       server.listen(0, "127.0.0.1");
       await once(server, "listening");
-      await vi.waitFor(() => expect(startWorker).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(first.start).toHaveBeenCalledOnce());
+      expect(second.start).not.toHaveBeenCalled();
 
-      expect(onServerError).not.toHaveBeenCalled();
-      expect(onWorkerStartError).not.toHaveBeenCalled();
-      expect(stopWorker).not.toHaveBeenCalled();
+      firstStart.resolve();
+      await vi.waitFor(() => expect(second.start).toHaveBeenCalledOnce());
+      expect(events).toEqual(["start:document", "ready:document", "start:Agent runtime"]);
     } finally {
+      firstStart.resolve();
       await closeServer(server);
     }
   });
 
-  it("does not start the worker when HTTP listen fails", async () => {
+  it("starts no components when HTTP listen fails", async () => {
     const occupiedServer = createServer();
     const candidateServer = createServer();
-    const startWorker = vi.fn().mockResolvedValue(undefined);
-    const stopWorker = vi.fn().mockResolvedValue(undefined);
-    let exitCode: number | undefined;
-    const onServerError = vi.fn(() => {
-      exitCode = 1;
-    });
+    const events: string[] = [];
+    const first = component("document worker", events);
+    const second = component("Agent runtime", events);
+    const onServerError = vi.fn();
 
     try {
       occupiedServer.listen(0, "127.0.0.1");
       await once(occupiedServer, "listening");
       const address = occupiedServer.address();
+      if (address === null || typeof address === "string") throw new Error("expected port");
 
-      if (address === null || typeof address === "string") {
-        throw new Error("expected an assigned TCP port");
-      }
-
-      attachDocumentWorkerStartupLifecycle(candidateServer, {
-        startWorker,
-        stopWorker,
+      attachApplicationWorkerStartupLifecycle(candidateServer, {
+        components: [first, second],
         onServerError,
-        onWorkerStartError: vi.fn(),
+        onComponentStartError: vi.fn(),
       });
-
       const listenError = once(candidateServer, "error");
       candidateServer.listen(address.port, "127.0.0.1");
-      const [error] = (await listenError) as [NodeJS.ErrnoException];
+      await listenError;
 
-      expect(error.code).toBe("EADDRINUSE");
       expect(onServerError).toHaveBeenCalledOnce();
-      expect(exitCode).toBe(1);
-      expect(startWorker).not.toHaveBeenCalled();
-      expect(stopWorker).not.toHaveBeenCalled();
+      expect(first.start).not.toHaveBeenCalled();
+      expect(second.start).not.toHaveBeenCalled();
     } finally {
       await closeServer(candidateServer);
       await closeServer(occupiedServer);
     }
   });
 
-  it("does not start the worker when listening occurs after shutdown begins", async () => {
+  it("prevents startup after shutdown begins", async () => {
     const server = createServer();
-    const startWorker = vi.fn().mockResolvedValue(undefined);
-    const stopWorker = vi.fn().mockResolvedValue(undefined);
-    const lifecycle = attachDocumentWorkerStartupLifecycle(server, {
-      startWorker,
-      stopWorker,
+    const events: string[] = [];
+    const first = component("document worker", events);
+    const second = component("Agent runtime", events);
+    const lifecycle = attachApplicationWorkerStartupLifecycle(server, {
+      components: [first, second],
       onServerError: vi.fn(),
-      onWorkerStartError: vi.fn(),
+      onComponentStartError: vi.fn(),
     });
 
-    await lifecycle.shutdownWorker();
+    await lifecycle.shutdownComponents();
     server.emit("listening");
 
-    expect(startWorker).not.toHaveBeenCalled();
-    expect(stopWorker).toHaveBeenCalledOnce();
+    expect(first.start).not.toHaveBeenCalled();
+    expect(second.start).not.toHaveBeenCalled();
+    expect(events).toEqual(["stop:Agent runtime", "stop:document worker"]);
   });
 
-  it("waits for in-flight worker startup before stopping the worker", async () => {
+  it("awaits in-flight startup and then stops components in reverse order", async () => {
     const server = createServer();
     const startup = createDeferred();
     const events: string[] = [];
-    const startWorker = vi.fn(async () => {
-      events.push("start initiated");
-      await startup.promise;
-      events.push("start resolved");
-    });
-    const stopWorker = vi.fn(() => {
-      events.push("stop");
-      return Promise.resolve();
-    });
-    const lifecycle = attachDocumentWorkerStartupLifecycle(server, {
-      startWorker,
-      stopWorker,
+    const first = {
+      name: "document worker",
+      start: vi.fn(async () => {
+        events.push("start:document");
+        await startup.promise;
+        events.push("ready:document");
+      }),
+      stop: vi.fn(() => {
+        events.push("stop:document");
+        return Promise.resolve();
+      }),
+    };
+    const second = component("Agent runtime", events);
+    const lifecycle = attachApplicationWorkerStartupLifecycle(server, {
+      components: [first, second],
       onServerError: vi.fn(),
-      onWorkerStartError: vi.fn(),
+      onComponentStartError: vi.fn(),
     });
 
     server.emit("listening");
-    events.push("shutdown initiated");
-    const shutdownPromise = lifecycle.shutdownWorker();
+    const shutdownPromise = lifecycle.shutdownComponents();
     await Promise.resolve();
-
-    expect(events).toEqual(["start initiated", "shutdown initiated"]);
-    expect(stopWorker).not.toHaveBeenCalled();
+    expect(events).toEqual(["start:document"]);
 
     startup.resolve();
     await shutdownPromise;
-
-    expect(events).toEqual(["start initiated", "shutdown initiated", "start resolved", "stop"]);
-    expect(stopWorker).toHaveBeenCalledOnce();
+    expect(second.start).not.toHaveBeenCalled();
+    expect(events).toEqual([
+      "start:document",
+      "ready:document",
+      "stop:Agent runtime",
+      "stop:document",
+    ]);
   });
 
-  it("continues shutdown when in-flight worker startup rejects", async () => {
+  it("gives a cancellable current startup a stop opportunity before awaiting it", async () => {
     const server = createServer();
     const startup = createDeferred();
-    const startupError = new Error("recovery failed");
-    const startWorker = vi.fn(() => startup.promise);
-    const stopWorker = vi.fn().mockResolvedValue(undefined);
-    const onWorkerStartError = vi.fn();
-    const lifecycle = attachDocumentWorkerStartupLifecycle(server, {
-      startWorker,
-      stopWorker,
+    const events: string[] = [];
+    const first = component("document worker", events);
+    const current = {
+      name: "Agent runtime",
+      stopWhileStarting: true,
+      start: vi.fn(() => {
+        events.push("start:Agent runtime");
+        return startup.promise;
+      }),
+      stop: vi.fn(() => {
+        events.push("stop:Agent runtime");
+        startup.resolve();
+        return Promise.resolve();
+      }),
+    };
+    const later = component("later worker", events);
+    const lifecycle = attachApplicationWorkerStartupLifecycle(server, {
+      components: [first, current, later],
       onServerError: vi.fn(),
-      onWorkerStartError,
+      onComponentStartError: vi.fn(),
     });
 
     server.emit("listening");
-    const shutdownPromise = lifecycle.shutdownWorker();
-    startup.reject(startupError);
-    await shutdownPromise;
+    await vi.waitFor(() => expect(current.start).toHaveBeenCalledOnce());
+    const shutdownPromise = lifecycle.shutdownComponents();
+    const repeatedShutdown = lifecycle.shutdownComponents();
 
-    expect(onWorkerStartError).toHaveBeenCalledOnce();
-    expect(onWorkerStartError).toHaveBeenCalledWith(startupError);
-    expect(stopWorker).toHaveBeenCalledOnce();
+    try {
+      expect(repeatedShutdown).toBe(shutdownPromise);
+      await Promise.resolve();
+      expect(current.stop).toHaveBeenCalledOnce();
+      await shutdownPromise;
+      expect(later.start).not.toHaveBeenCalled();
+      expect(later.stop).toHaveBeenCalledOnce();
+      expect(first.stop).toHaveBeenCalledOnce();
+      expect(current.stop).toHaveBeenCalledOnce();
+      expect(events).toEqual([
+        "start:document worker",
+        "start:Agent runtime",
+        "stop:Agent runtime",
+        "stop:later worker",
+        "stop:document worker",
+      ]);
+    } finally {
+      startup.resolve();
+      await shutdownPromise.catch(() => undefined);
+    }
+  });
+
+  it("identifies a failing component and stops the startup sequence", async () => {
+    const server = createServer();
+    const events: string[] = [];
+    const startupError = new Error("claim probe failed");
+    const first = component("document worker", events);
+    const failing = {
+      name: "Agent runtime",
+      stopWhileStarting: true,
+      start: vi.fn(() => {
+        events.push("start:Agent runtime");
+        return Promise.reject(startupError);
+      }),
+      stop: vi.fn(() => {
+        events.push("stop:Agent runtime");
+        return Promise.resolve();
+      }),
+    };
+    const later = component("later worker", events);
+    const shutdownCapture: { promise?: Promise<void> } = {};
+    const onComponentStartError = vi.fn(() => {
+      shutdownCapture.promise = lifecycle.shutdownComponents();
+    });
+    const lifecycle = attachApplicationWorkerStartupLifecycle(server, {
+      components: [first, failing, later],
+      onServerError: vi.fn(),
+      onComponentStartError,
+    });
+
+    server.emit("listening");
+    await vi.waitFor(() => expect(onComponentStartError).toHaveBeenCalledOnce());
+    expect(onComponentStartError).toHaveBeenCalledWith("Agent runtime", startupError);
+    const fatalShutdown = shutdownCapture.promise;
+    if (!fatalShutdown) throw new Error("Expected startup failure to initiate shutdown.");
+    await fatalShutdown;
+    expect(later.start).not.toHaveBeenCalled();
+    expect(later.stop).toHaveBeenCalledOnce();
+    expect(first.stop).toHaveBeenCalledOnce();
+    expect(failing.stop).toHaveBeenCalledOnce();
+    expect(lifecycle.shutdownComponents()).toBe(fatalShutdown);
+    await lifecycle.shutdownComponents();
+    expect(first.stop).toHaveBeenCalledOnce();
+    expect(failing.stop).toHaveBeenCalledOnce();
+    expect(events).toEqual([
+      "start:document worker",
+      "start:Agent runtime",
+      "stop:Agent runtime",
+      "stop:later worker",
+      "stop:document worker",
+    ]);
+  });
+
+  it("attempts every stop, aggregates failures, and memoizes shutdown", async () => {
+    const server = createServer();
+    const events: string[] = [];
+    const stopError = new Error("Agent stop failed");
+    const first = component("document worker", events);
+    const failing = {
+      name: "Agent runtime",
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn(() => {
+        events.push("stop:Agent runtime");
+        return Promise.reject(stopError);
+      }),
+    };
+    const lifecycle = attachApplicationWorkerStartupLifecycle(server, {
+      components: [first, failing],
+      onServerError: vi.fn(),
+      onComponentStartError: vi.fn(),
+    });
+
+    const firstShutdown = lifecycle.shutdownComponents();
+    const repeatedShutdown = lifecycle.shutdownComponents();
+    expect(repeatedShutdown).toBe(firstShutdown);
+    await expect(firstShutdown).rejects.toMatchObject({
+      name: "AggregateError",
+      errors: [
+        expect.objectContaining({
+          name: "ApplicationLifecycleStopError",
+          componentName: "Agent runtime",
+          cause: stopError,
+        }),
+      ],
+    });
+    expect(events).toEqual(["stop:Agent runtime", "stop:document worker"]);
+    expect(failing.stop).toHaveBeenCalledOnce();
+    expect(first.stop).toHaveBeenCalledOnce();
+    await expect(lifecycle.shutdownComponents()).rejects.toBeInstanceOf(AggregateError);
+    expect(failing.stop).toHaveBeenCalledOnce();
+    expect(first.stop).toHaveBeenCalledOnce();
   });
 });

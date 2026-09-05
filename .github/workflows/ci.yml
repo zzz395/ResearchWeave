@@ -116,3 +116,39 @@ jobs:
 
       - name: Run Phase 7A smoke test
         run: npm run test:phase7a:postgres
+
+  phase9-postgres-smoke:
+    name: Phase 9 PostgreSQL smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PHASE9_SMOKE_DATABASE_URL: postgresql://researchweave:researchweave@localhost:5432/phase9_smoke
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: phase9_smoke
+          POSTGRES_USER: researchweave
+          POSTGRES_PASSWORD: researchweave
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U researchweave -d phase9_smoke"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Phase 9 smoke test
+        run: npm run test:phase9:postgres
