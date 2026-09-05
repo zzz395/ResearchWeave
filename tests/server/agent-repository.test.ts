@@ -5,6 +5,7 @@ import {
   calculateAgentLeaseExpiry,
   classifyAgentIdempotency,
   classifyAgentWorkerWrite,
+  isAgentLeaseExpired,
 } from "../../server/modules/agents/repository";
 import type { AgentRunRecord } from "../../server/db/schema";
 
@@ -118,6 +119,25 @@ describe("Agent repository policy helpers", () => {
     );
     expect(calculateAgentLeaseExpiry(now, 60_000, deadline)).toEqual(deadline);
     expect(() => calculateAgentLeaseExpiry(now, 0, deadline)).toThrow(TypeError);
+  });
+
+  test("treats the exact expiry boundary and later times as stale", () => {
+    const expiresAt = new Date("2026-09-03T00:00:30.000Z");
+
+    expect(
+      isAgentLeaseExpired(
+        { leaseExpiresAt: expiresAt },
+        new Date("2026-09-03T00:00:29.999Z"),
+      ),
+    ).toBe(false);
+    expect(isAgentLeaseExpired({ leaseExpiresAt: expiresAt }, expiresAt)).toBe(true);
+    expect(
+      isAgentLeaseExpired(
+        { leaseExpiresAt: expiresAt },
+        new Date("2026-09-03T00:00:30.001Z"),
+      ),
+    ).toBe(true);
+    expect(isAgentLeaseExpired({ leaseExpiresAt: null }, NOW)).toBe(true);
   });
 
   test("gives cancellation priority over authorization and deadline failures", () => {

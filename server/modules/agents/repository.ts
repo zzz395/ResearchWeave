@@ -370,6 +370,13 @@ export function calculateAgentLeaseExpiry(now: Date, duration: number, deadlineA
   return new Date(Math.min(now.getTime() + duration, deadlineAt.getTime()));
 }
 
+export function isAgentLeaseExpired(
+  run: Readonly<Pick<AgentRunRecord, "leaseExpiresAt">>,
+  now: Date,
+): boolean {
+  return !run.leaseExpiresAt || run.leaseExpiresAt.getTime() <= now.getTime();
+}
+
 export type AgentWorkerWriteGuard =
   | "allowed"
   | "cancel_requested"
@@ -1208,6 +1215,7 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
             .where(eq(agentRuns.id, run.id));
           return { status: "stale" };
         }
+        if (isAgentLeaseExpired(run, input.now)) return { status: "stale" };
         const expiresAt = calculateAgentLeaseExpiry(input.now, input.leaseDurationMs, run.deadlineAt);
         const updated = await transaction
           .update(agentRuns)
@@ -1353,6 +1361,7 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
             .where(eq(agentRuns.id, run.id));
           return { status: guard };
         }
+        if (isAgentLeaseExpired(run, input.now)) return { status: "stale" };
         if (!isJsonObject(input.safeArguments)) throw new TypeError("Safe Agent arguments must be a JSON object.");
         agentToolNameSchema.parse(input.toolName);
 
@@ -1456,6 +1465,7 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
           : [];
         const guard = classifyAgentWorkerWrite(run, Boolean(membership), input.now);
         if (guard !== "allowed") return { status: guard };
+        if (isAgentLeaseExpired(run, input.now)) return { status: "stale" };
         if (serializedJsonBytes(observationResult.data) > run.observationMaxBytes) {
           return { status: "observation_too_large" };
         }
@@ -1645,6 +1655,7 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
           if (!failed) throw new Error("Agent terminal guard update returned no record.");
           return { status: membership ? "deadline_exceeded" : "access_revoked" };
         }
+        if (isAgentLeaseExpired(run, input.now)) return { status: "stale" };
         if (
           !Number.isInteger(input.contextBytes) ||
           input.contextBytes < 0 ||
@@ -1774,6 +1785,7 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
             .where(eq(agentRuns.id, run.id));
           return { status: membership ? "deadline_exceeded" : "access_revoked" };
         }
+        if (isAgentLeaseExpired(run, input.now)) return { status: "stale" };
         if (run.stepCount >= run.maxSteps) return { status: "step_limit_exceeded" };
         const [runningStep] = await transaction
           .select({ id: agentRunSteps.id })
@@ -1955,6 +1967,7 @@ export function createDrizzleAgentRepository(database: Database): AgentRepositor
             .where(eq(agentRuns.id, run.id));
           return { status: membership ? "deadline_exceeded" : "access_revoked" };
         }
+        if (isAgentLeaseExpired(run, input.now)) return { status: "stale" };
         if (input.decisionErrorStepId && run.stepCount >= run.maxSteps) {
           return { status: "step_limit_exceeded" };
         }

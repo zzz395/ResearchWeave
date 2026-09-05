@@ -42,8 +42,11 @@ type ExecutorRepository = Pick<
   | "markCancelled"
 >;
 
+export type AgentExecutionLeaseCheckpoint = () => Promise<"continue" | "stop">;
+
 export interface AgentRunExecutionInput extends AgentWorkerFence {
   readonly signal: AbortSignal;
+  readonly leaseCheckpoint?: AgentExecutionLeaseCheckpoint;
 }
 
 export type AgentRunExecutionOutcome =
@@ -179,6 +182,17 @@ export function createAgentRunExecutor(
     return { status, runId };
   }
 
+  async function checkpointLease(
+    fence: AgentWorkerFence,
+    checkpoint: AgentExecutionLeaseCheckpoint | undefined,
+  ): Promise<AgentRunExecutionOutcome | null> {
+    if (!checkpoint) return null;
+    const result = await checkpoint();
+    if (result === "continue") return null;
+    if (result === "stop") return outcome(fence.runId, "interrupted");
+    throw new TypeError("Invalid Agent lease checkpoint result.");
+  }
+
   async function settleCancellation(
     fence: AgentWorkerFence,
   ): Promise<AgentRunExecutionOutcome> {
@@ -268,6 +282,7 @@ export function createAgentRunExecutor(
     stepId: string;
     errorCode: AgentErrorCode;
     projection: AgentDecisionContextProjection;
+    leaseCheckpoint?: AgentExecutionLeaseCheckpoint;
   }): Promise<AgentRunExecutionOutcome | null> {
     const result: FailAgentStepResult = await dependencies.repository.failStep({
       ...input.fence,
@@ -278,7 +293,7 @@ export function createAgentRunExecutor(
     });
     switch (result.status) {
       case "failed":
-        return null;
+        return checkpointLease(input.fence, input.leaseCheckpoint);
       case "stale":
         return outcome(input.fence.runId, "stale");
       case "cancel_requested":
@@ -319,6 +334,7 @@ export function createAgentRunExecutor(
     result: AgentToolExecutionResult;
     projectedContextBytes: number;
     predictedEvidenceIds: readonly string[];
+    leaseCheckpoint?: AgentExecutionLeaseCheckpoint;
   }): Promise<AgentRunExecutionOutcome | null> {
     const result: CompleteAgentToolStepResult =
       await dependencies.repository.completeToolStepWithEvidence({
@@ -337,7 +353,9 @@ export function createAgentRunExecutor(
           result.step.status === "completed" &&
           actualIds.length === input.predictedEvidenceIds.length &&
           actualIds.every((id, index) => id === input.predictedEvidenceIds[index]);
-        return consistent ? null : failRun(input.fence, "agent_persistence_failed", false);
+        return consistent
+          ? checkpointLease(input.fence, input.leaseCheckpoint)
+          : failRun(input.fence, "agent_persistence_failed", false);
       }
       case "stale":
         return outcome(input.fence.runId, "stale");
@@ -364,6 +382,7 @@ export function createAgentRunExecutor(
     state: AgentExecutionState;
     prepared: PreparedAgentToolCall;
     resumeStepId?: string;
+    leaseCheckpoint?: AgentExecutionLeaseCheckpoint;
   }): Promise<AgentRunExecutionOutcome | null> {
     if (input.callerSignal.aborted) {
       const checked = await recheck(input.fence, input.callerSignal);
@@ -380,6 +399,8 @@ export function createAgentRunExecutor(
     if (!("step" in reserved)) {
       return handleReserveResult(input.fence, reserved);
     }
+    const reservedCheckpoint = await checkpointLease(input.fence, input.leaseCheckpoint);
+    if (reservedCheckpoint) return reservedCheckpoint;
 
     let toolResult: AgentToolExecutionResult;
     try {
@@ -423,6 +444,7 @@ export function createAgentRunExecutor(
         stepId: reserved.step.id,
         errorCode: code,
         projection,
+        leaseCheckpoint: input.leaseCheckpoint,
       });
     }
 
@@ -437,6 +459,7 @@ export function createAgentRunExecutor(
       result: toolResult,
       projectedContextBytes: appended.contextBytes,
       predictedEvidenceIds,
+      leaseCheckpoint: input.leaseCheckpoint,
     });
   }
 
@@ -533,6 +556,7 @@ export function createAgentRunExecutor(
               state,
               prepared,
               resumeStepId: incomplete.id,
+              leaseCheckpoint: input.leaseCheckpoint,
             });
             if (result) return result;
             continue;
@@ -627,6 +651,7 @@ export function createAgentRunExecutor(
             callerSignal: input.signal,
             state: checked,
             prepared,
+            leaseCheckpoint: input.leaseCheckpoint,
           });
           if (result) return result;
         }
