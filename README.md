@@ -6,9 +6,9 @@ ResearchWeave is a TypeScript research workspace for small teams. It combines se
 
 ## Current status
 
-ResearchWeave has completed **Phase 8B — Product UX Refinement & Accessibility**. The current release line integrates the shipped collaboration, Research, and Knowledge workflows behind a responsive, keyboard-accessible application shell.
+ResearchWeave has completed the implementation of **Phase 9 — Tool-Calling Agent & Execution Trace**, including the Phase 9C-7 Agent UI and navigation. The final checkpoint and release closure remain pending for the prepared `0.9.0` package metadata; no `v0.9.0` tag has been created.
 
-Implemented through Phase 8B:
+Implemented through Phase 9:
 
 - secure registration, login, session restoration, protected routes, and logout
 - Research Space creation, membership authorization, owner controls, and connections
@@ -17,10 +17,13 @@ Implemented through Phase 8B:
 - PDF, Markdown, and TXT upload with durable storage, extraction, deterministic chunking, embeddings, reindexing, retry, and failure states
 - Space-authorized pgvector semantic retrieval and grounded answers with exact source citations
 - integrated Research-to-Saved-Papers and Space-to-Knowledge workflows
+- system-managed Agent definitions, Space-scoped immutable Tasks, retry Runs, cancellation, and durable execution traces
+- bounded Agent execution through an immutable allowlist of arXiv search, Knowledge retrieval, and grounded-answer tools
+- production Agent Worker readiness, PostgreSQL leases, heartbeats, fencing, recovery, and lifecycle shutdown coordination
 - responsive desktop, tablet, and mobile navigation with accessible focus, status, error, and realtime-announcement behavior
 - shared Zod contracts, versioned Drizzle migrations, structured errors, Origin checks, rate limits, and automated authorization coverage
 
-The backend Agent runtime, durable execution, and trace APIs are production-active when the complete provider configuration is present. Agent UI/navigation, unified Activity, paper comparison, and Phase 9C-7 final acceptance are not yet complete; no final Phase 9 completion is claimed here.
+Agent definitions, Tasks, Runs, and server-validated evidence are available through the authenticated Agent workspace. Unified Activity, paper comparison, and complete browser end-to-end evaluation remain Phase 10 work.
 
 ## Development setup
 
@@ -68,7 +71,7 @@ Semantic retrieval filters all vector queries by current Space membership and co
 
 ### Agents
 
-The backend exposes the system Research Agent, Space-scoped task submission, durable Runs, retries, cancellation, and execution traces. The production Worker uses PostgreSQL claims, leases, heartbeats, and fencing; local process shutdown leaves interrupted work recoverable through lease expiry rather than persisting a cancellation or failure. There is not yet an Agent product route or navigation entry in the client.
+The application exposes the system Research Agent, Space-scoped task submission, durable Runs, retries, cancellation, and execution traces. The production Worker uses PostgreSQL claims, leases, heartbeats, and fencing; local process shutdown leaves interrupted work recoverable through lease expiry rather than persisting a cancellation or failure. The client presents runtime availability, immutable task history, safe step observations, and server-validated evidence through REST polling.
 
 ## Current application routes
 
@@ -78,6 +81,10 @@ The backend exposes the system Research Agent, Space-scoped task submission, dur
 /register
 /research
 /research/papers/:paperId
+/agents
+/agents/tasks
+/agents/tasks/:taskId
+/agents/runs/:runId
 /spaces
 /spaces/new
 /spaces/:spaceId
@@ -89,7 +96,7 @@ The backend exposes the system Research Agent, Space-scoped task submission, dur
 /connections
 ```
 
-Future destinations such as Agents and Activity are intentionally absent from the runtime router and navigation.
+Future destinations such as Activity and paper comparison remain intentionally absent from the runtime router and navigation.
 
 ## Versioned APIs
 

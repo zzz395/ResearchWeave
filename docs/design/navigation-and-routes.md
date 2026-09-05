@@ -2,15 +2,15 @@
 
 ## Purpose and status
 
-This document records both the **implemented Phase 8B route surface** and the planned expanded navigation model. The implemented tables are descriptive of the current router; the planned tables are specifications only and do not imply that a route or feature exists.
+This document records both the **implemented Phase 9 route surface** and the planned expanded navigation model. The implemented tables are descriptive of the current router; the planned tables are specifications only and do not imply that a route or feature exists.
 
-The route model follows the approved product boundary: Research Space is the collaboration scope; Paper Detail and future Execution Trace are detail routes; Chat, Saved Papers, Knowledge, and Members operate in a selected Space; external Research metadata and imported Knowledge remain distinct.
+The route model follows the approved product boundary: Research Space is the collaboration scope; Paper Detail and Execution Trace are detail routes; Chat, Saved Papers, Knowledge, and Members operate in a selected Space; external Research metadata and imported Knowledge remain distinct.
 
 ## Navigation mental model
 
 ResearchWeave has one stable primary navigation: the authenticated application sidebar. It answers “which product area am I in?” Contextual tabs answer “which view of this resource am I using?” Breadcrumbs answer “how did this resource inherit its context?” Detail routes are reached from content and never become permanent sidebar items.
 
-### Implemented Phase 8B navigation
+### Implemented Phase 9 navigation
 
 ```text
 ResearchWeave
@@ -18,6 +18,7 @@ ResearchWeave
 │  └─ Research
 └─ Workspace
    ├─ Spaces
+   ├─ Agents
    └─ Connections
 
 Selected Research Space
@@ -70,7 +71,7 @@ The following are deliberately not primary navigation items:
 
 Tabs use URL routes when a view should survive refresh or be shareable. Local tabs are reserved for presentational subdivisions that do not change the data boundary.
 
-## Implemented route map — Phase 8B
+## Implemented route map — Phase 9
 
 ### Entry and public routes
 
@@ -86,6 +87,10 @@ Tabs use URL routes when a view should survive refresh or be shareable. Local ta
 |---|---|---|
 | `/research` | Primary | Real arXiv paper search with URL-backed query, page, and sort state. |
 | `/research/papers/:paperId` | Detail | Persisted paper metadata, abstract evidence, source links, summary, and explicit Save-to-Space workflow. |
+| `/agents` | Primary | System-managed Agent definitions, purpose, approved tools, limits, and runtime availability. |
+| `/agents/tasks` | Secondary | Explicitly Space-scoped durable Task ledger and New Task entry. |
+| `/agents/tasks/:taskId` | Detail | Immutable Task prompt and ordered durable Run attempts. |
+| `/agents/runs/:runId` | Detail | Durable Run state, safe ordered steps, final answer, and server-validated evidence. |
 | `/spaces` | Primary | Authorized Research Space list. |
 | `/spaces/new` | Workflow | Create a Research Space. |
 | `/spaces/:spaceId` | Space default | Space overview and truthful continuation actions derived from current resources. |
@@ -96,7 +101,7 @@ Tabs use URL routes when a view should survive refresh or be shareable. Local ta
 | `/spaces/:spaceId/settings` | Owner-only Space tab | Rename and lifecycle controls. |
 | `/connections` | Primary | Connection requests and accepted connections. |
 
-Any route not listed above is absent from the current router. In particular, Overview as a global destination, Agents, Activity, Knowledge Bases, document detail, paper comparison, and user Settings remain planned.
+Any route not listed above is absent from the current router. In particular, Overview as a global destination, Activity, Knowledge Bases, standalone document detail, paper comparison, and user Settings remain planned. Agent state refreshes through durable REST polling; no Agent-specific WebSocket route or protocol exists.
 
 ## Planned canonical route map
 

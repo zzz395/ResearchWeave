@@ -29,6 +29,19 @@ export const router = createBrowserRouter([
             path: "/research/papers/:paperId",
             lazy: () => import("../features/research/pages/research-paper-page"),
           },
+          { path: "/agents", lazy: () => import("../features/agents/pages/agents-page") },
+          {
+            path: "/agents/tasks",
+            lazy: () => import("../features/agents/pages/agent-tasks-page"),
+          },
+          {
+            path: "/agents/tasks/:taskId",
+            lazy: () => import("../features/agents/pages/agent-task-page"),
+          },
+          {
+            path: "/agents/runs/:runId",
+            lazy: () => import("../features/agents/pages/agent-run-page"),
+          },
           { path: "/spaces", lazy: () => import("../features/spaces/pages/spaces-page") },
           { path: "/spaces/new", lazy: () => import("../features/spaces/pages/new-space-page") },
           {

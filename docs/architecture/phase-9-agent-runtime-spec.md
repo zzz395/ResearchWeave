@@ -5,12 +5,18 @@
 - Review stage: **Architecture Freeze complete**
 - Baseline reviewed: `v0.8.1` / `4e4fb6d`
 - Freeze accepted: **2026-09-03**
-- Implementation status: **Phase 9B-1 contracts and state rules implemented**
+- Phase 9 implementation status: **COMPLETE**
+- Phase 9C-7 implementation status: **COMPLETE**
+- Source / Architecture Review: **Implementation review complete; findings closure review pending**
+- Final checkpoint: **PENDING**
+- Release closure: **PENDING**
+- Package metadata: **0.9.0 PREPARED**
+- `v0.9.0` tag: **NOT YET CREATED**
 - Architecture freeze: **PASS**
 
 This document is the frozen Phase 9 design. It records the decisions that govern the Agent migration, API, worker, tool registry, provider adapter, and UI implementation.
 
-Where this document conflicts with the early Agent sketch in `technical-architecture.md`, this Phase 9 specification is the current proposal. In particular, `summarize_document` and `compare_papers` are not Phase 9 tools because no dedicated application services currently implement those capabilities.
+Where this document conflicts with the early Agent sketch in `technical-architecture.md`, this Phase 9 specification is the governing implementation record. In particular, `summarize_document` and `compare_papers` are not Phase 9 tools because no dedicated application services currently implement those capabilities.
 
 ## 1. Review scope and evidence
 
@@ -34,7 +40,7 @@ The repository was clean at review time. `main`, `origin/main`, and `v0.8.1` all
 |---|---|---|
 | Real arXiv search | `ResearchService.searchPapers` | Wrap as `search_arxiv`. |
 | Authorized semantic retrieval | `SemanticRetrievalService.retrieve` | Wrap as `search_knowledge_base`. |
-| Authorized grounded answer | `GroundedAnswerService.answer` | Wrap as `ask_knowledge`. |
+| Authorized grounded answer | `GroundedAnswerService.answerWithSources` | Wrap as `ask_knowledge`. |
 
 The Agent runtime must call these interfaces. It must not call their repositories, provider adapters, pgvector, or arXiv directly.
 
@@ -254,7 +260,7 @@ Before each tool call, the adapter revalidates current Space membership through 
 |---|---|---|---|
 | `search_arxiv` | normalized query, page `1..20`, page size `1..5`, allowlisted sort | `ResearchService.searchPapers` | Up to 5 real paper records with identifiers, title, bounded authors, dates, URLs, and bounded abstract evidence. |
 | `search_knowledge_base` | query `2..2000`, limit `1..8` | `SemanticRetrievalService.retrieve` | Up to 8 ranked authorized chunks with bounded excerpts and exact locators. |
-| `ask_knowledge` | query `2..2000` | `GroundedAnswerService.answer` | Existing answered/insufficient-context result and normalized underlying citations. |
+| `ask_knowledge` | query `2..2000` | `GroundedAnswerService.answerWithSources` | Existing answered/insufficient-context result and normalized underlying citations. |
 
 Tool rules:
 
@@ -441,7 +447,7 @@ The create response contains both `task` and initial `run`. A repeated identical
 
 Run/step reads never disclose whether an inaccessible resource exists; they return the established safe `404` behavior. Cursor encoding follows the canonical bounded document-list convention.
 
-## 13. UI route proposal
+## 13. Implemented UI routes
 
 Phase 9 activates only the already planned Agent routes:
 
@@ -575,4 +581,4 @@ The following decisions were explicitly accepted on 2026-09-03 before implementa
 - [x] failure codes and acceptance-test matrix;
 - [x] all listed non-goals.
 
-Phase 9 implementation must proceed in the frozen staged order; changes to these decisions require a new architecture review.
+Phase 9 implementation followed the frozen staged order. Final checkpoint validation and release closure remain pending. Future changes to these decisions require a new architecture review.

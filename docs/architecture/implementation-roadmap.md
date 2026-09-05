@@ -4,7 +4,7 @@
 
 ResearchWeave progresses from a secure engineering foundation through collaboration, real academic discovery, durable document indexing, grounded knowledge, integrated workflows, and bounded agent orchestration. Every completed phase must represent verifiable behavior backed by durable state or a real external integration; fixtures and timers never stand in for product capability.
 
-The product capability baseline is complete through **Phase 8B**. Phase 8C aligns the public repository and automated quality gates with that shipped state. **Phase 9 — Tool-Calling Agent & Execution Trace** is the next product phase and has not started.
+The product implementation baseline is complete through **Phase 9 — Tool-Calling Agent & Execution Trace**, including Phase 9C-7. Final checkpoint validation and release closure remain pending; Phase 10 is the next planned product phase and has not started.
 
 ## Architecture & Product Definition — Completed
 
@@ -195,11 +195,11 @@ The product capability baseline is complete through **Phase 8B**. Phase 8C align
 
 Phase 8C changes repository documentation and delivery automation only. It does not add Agent behavior or change runtime APIs, database schemas, authorization, or realtime architecture.
 
-## Phase 9 — Tool-Calling Agent & Execution Trace — Next
+## Phase 9 — Tool-Calling Agent & Execution Trace — Implementation Complete; Release Closure Pending
 
 **Goal:** Orchestrate existing Research and Knowledge services through real, bounded tools with a durable execution trace.
 
-**Planned deliverables**
+**Delivered**
 
 - Space-authorized Agent definitions, durable tasks, runs, ordered steps, cancellation, and truthful failure state
 - a structured allowlisted tool registry whose tools delegate to existing application services
@@ -208,6 +208,8 @@ Phase 8C changes repository documentation and delivery automation only. It does 
 - Agent Tasks and Execution Trace UI backed only by durable execution state
 
 The initial tools must wrap capabilities that already exist and are tested. `search_arxiv`, `search_knowledge_base`, and grounded knowledge answering are eligible. Document summarization and paper comparison remain excluded until dedicated services exist; Agent code must not duplicate those domains.
+
+Phase 9 implements one system-managed Research Agent, a production lifecycle-owned Worker, REST-polled client routes for definitions, Tasks, Runs, traces, cancellation, retries, and server-validated evidence, plus a PostgreSQL runtime acceptance gate. The Phase 9C-7 implementation is complete; final checkpoint validation, release closure, and the `v0.9.0` tag remain pending. Package metadata is prepared at `0.9.0`.
 
 **Acceptance criteria**
 
@@ -251,8 +253,8 @@ Architecture & Product Definition ✓
 → Integrated Research Workspace ✓
 → Product UX Refinement & Accessibility ✓
 → Release Alignment & Automated Gates ✓
-→ Tool-Calling Agent & Execution Trace (next)
-→ Integration, Evaluation & Portfolio Polish
+→ Tool-Calling Agent & Execution Trace ✓
+→ Integration, Evaluation & Portfolio Polish (next)
 ```
 
-Do not begin Agent implementation as part of Phase 8C. Do not add Activity or comparison presentation until their durable service boundaries exist.
+Do not add Activity or comparison presentation until their durable service boundaries exist in Phase 10.

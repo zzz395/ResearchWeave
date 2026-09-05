@@ -2,7 +2,7 @@
 
 ## Purpose and use
 
-This document defines future screen behavior at implementation-ready detail without implementing any screen. Routes follow [Navigation and routes](navigation-and-routes.md); layout, state, and accessibility rules follow the [UI/UX specification](ui-ux-spec.md); visual values and primitives follow the [Design system](design-system.md).
+This document records implemented screen behavior and future screens at implementation-ready detail. Routes follow [Navigation and routes](navigation-and-routes.md); layout, state, and accessibility rules follow the [UI/UX specification](ui-ux-spec.md); visual values and primitives follow the [Design system](design-system.md).
 
 Authentication, Research Spaces, Connections, Members, and Chat use real Phase 4 data. Later screens described below may display a field only after its API contract supplies a real value. “Not available yet” is preferable to an invented count, timestamp, progress value, status, or result.
 
@@ -14,7 +14,7 @@ Authentication, Research Spaces, Connections, Members, and Chat use real Phase 4
 | `MVP-2: collaboration` | Connections, Space Chat/Members views within Space Detail, Activity | Completes the real multi-user space workflow after identity and persistence. |
 | `Later-1: academic discovery` | Research Search, Paper Detail, Paper Comparison | Requires trustworthy arXiv and explicit evidence-scope services. |
 | `Later-2: knowledge` | Knowledge Documents, Knowledge Base Detail, Ask Knowledge | Requires real upload, parsing, indexing, retrieval, and citations. |
-| `Later-3: agents` | Agents, Agent Tasks, Agent Execution Trace | Requires real Research/Knowledge tools and durable bounded execution. |
+| `Delivered Phase 9: agents` | Agents, Agent Tasks, Agent Execution Trace | Uses real Research/Knowledge tools and durable bounded execution. |
 | `Later polish` | Overview and expanded Settings | Overview waits for meaningful real cross-domain data; Settings stays minimal. |
 
 Screens from later waves must not appear as empty navigation destinations during MVP-1. Add a route only when its implementation phase begins.
@@ -270,25 +270,25 @@ Use the exact heading `Abstract-based Summary`. Full-document actions remain una
 
 ## 14. Agents
 
-**Route / priority:** `/agents` · `Later-3`
+**Route / priority:** `/agents` · delivered in Phase 9
 
 | Requirement | Specification |
 |---|---|
-| Purpose | Inspect real agent definitions, purpose, allowed tools, limits, and recent runs. |
-| Primary action | `Create agent` only if custom definitions are in the accepted implementation scope; otherwise no global primary action. |
-| Secondary actions | Open agent, enable/disable when permitted, start a bounded task. |
-| Information hierarchy | Page title → agent list with name, purpose, scope, enabled state, allowed-tool summary, real recent run status → actions. |
-| Main components | PageHeader, compact list/cards, Badge for tools, StatusBadge, EmptyState, DropdownMenu. |
-| Empty state | Explain that no agents are configured; offer creation only when backend supports it. Never seed impressive-sounding agents. |
-| Loading state | Definition-row skeletons; run status refreshes without replacing agent content. |
+| Purpose | Inspect real system-managed Agent definitions, purpose, allowed tools, limits, and runtime availability. |
+| Primary action | Open the durable Task ledger. |
+| Secondary actions | Start a bounded task with one available Agent. |
+| Information hierarchy | Page title → definition cards with name, purpose, revision, availability, allowed tools, fixed limits → task action. |
+| Main components | PageHeader, definition cards, tool labels, StatusBadge, EmptyState. |
+| Empty state | Explain that definitions are provisioned by the application. Never seed impressive-sounding Agents. |
+| Loading state | Definition-card skeletons; transient runtime availability refreshes without fabricated online state. |
 | Error state | Definition-list failure offers retry. Disabled/unavailable tools explain the unmet service prerequisite. |
 | Responsive behavior | One-column rows/cards; tool allowlist wraps as text/badges without horizontal overflow. |
 
-Agents are service orchestrators, not personas. Avoid avatars, rotating cores, “intelligence level,” fake skills, and simulated online state.
+Agents are service orchestrators, not personas. Avoid avatars, rotating cores, “intelligence level,” fake skills, and simulated online state. Phase 9 exposes only system-managed definitions; it does not provide a custom Agent editor.
 
 ## 15. Agent Tasks
 
-**Route / priority:** `/agents/tasks` and `/agents/tasks/:taskId` · `Later-3`
+**Route / priority:** `/agents/tasks` and `/agents/tasks/:taskId` · delivered in Phase 9
 
 | Requirement | Specification |
 |---|---|
@@ -298,27 +298,27 @@ Agents are service orchestrators, not personas. Avoid avatars, rotating cores, �
 | Information hierarchy | Page title → filters → task rows with request summary, agent, space scope, durable status, created/updated time → result/run links. Task detail adds prompt, limits, attempts, final result/error. |
 | Main components | PageHeader, form route/dialog, DataTable, StatusBadge, filter Selects, Pagination, Alert. |
 | Empty state | `No agent tasks yet` with New Task only if at least one usable agent and scope exist. |
-| Loading state | Task rows skeleton; running status comes from persisted job/REST plus validated realtime updates. No timer progress. |
+| Loading state | Task rows skeleton; queued/running status comes from two-second REST polling of persisted state. No timer progress or Agent realtime protocol. |
 | Error state | Failed tasks remain visible with safe error and trace link. Cancellation/retry failure stays contextual. |
-| Responsive behavior | Mobile task rows show summary, status, agent, and time; filters open in a sheet; task detail stacks metadata before result. |
+| Responsive behavior | Mobile task rows show summary, status, agent, and time; filters stack above the ledger; task detail stacks metadata before result. |
 
-Task creation shows selected Research Space/Knowledge scope and agent limits before submission. It cannot offer tools unavailable to that agent or actor.
+Task creation shows the selected Research Space and Agent limits before submission. It cannot offer tools unavailable to that Agent or actor.
 
 ## 16. Agent Execution Trace
 
-**Route / priority:** `/agents/runs/:runId` · `Later-3`
+**Route / priority:** `/agents/runs/:runId` · delivered in Phase 9
 
 | Requirement | Specification |
 |---|---|
 | Purpose | Explain what observable work occurred in a run without exposing hidden chain-of-thought or secrets. |
 | Primary action | None for a completed trace; `Cancel run` may be primary while a cancellable run is active. |
-| Secondary actions | Retry as new run, open evidence/source, copy safe run ID, return to task. |
+| Secondary actions | Retry the latest terminal Task as a new Run, open evidence/source, return to Task. |
 | Information hierarchy | Task/run breadcrumb → run status, agent, scope, start/end/duration → ordered steps → selected step detail → final result and citations/error. |
 | Main components | PageHeader, StatusBadge, step list/timeline, TraceStep, definition lists, code/JSON viewer only for redacted safe input, Citation list, Alert. |
 | Empty state | A queued run states that no steps have executed. A completed run with no steps is a data-integrity error, not a blank success view. |
 | Loading state | Show persisted queued/running status and append validated steps without fabricated thinking text or decorative animation. |
 | Error state | Failed step identifies tool, safe error, duration, and retained prior observations. Run failure remains truthful and actionable. |
-| Responsive behavior | Wide screens use step list plus detail panel. Mobile uses ordered disclosure sections with detail immediately after its step heading. |
+| Responsive behavior | Wide screens use a dense ordered ledger. Mobile uses stacked disclosure sections with detail immediately after its step heading. |
 
 Allowed trace fields: tool, safe input summary, execution status, observation summary, duration, safe error, result evidence, citations, and final result. Prohibited: hidden reasoning, credentials, raw authorization, unrestricted document text, provider internals, or arbitrary model prompts.
 

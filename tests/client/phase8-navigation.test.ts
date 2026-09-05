@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { primaryNavigationGroups } from "../../src/app/navigation";
 import { getSpaceNavigationDestinations } from "../../src/features/spaces/space-navigation";
 
-describe("Phase 8 navigation architecture", () => {
+describe("Primary navigation architecture", () => {
   it("groups the primary destinations under Discover and Workspace", () => {
     expect(primaryNavigationGroups).toEqual([
       {
@@ -14,6 +14,7 @@ describe("Phase 8 navigation architecture", () => {
         label: "Workspace",
         destinations: [
           { icon: "spaces", label: "Spaces", to: "/spaces" },
+          { icon: "agents", label: "Agents", to: "/agents" },
           { icon: "connections", label: "Connections", to: "/connections" },
         ],
       },
