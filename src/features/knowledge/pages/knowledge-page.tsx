@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { Database, RefreshCw, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import type { Document } from "../../../../shared/contracts/documents";
 import { queryClient } from "../../../app/query-client";
@@ -22,13 +23,18 @@ import {
   isTrueZeroDocumentList,
   shouldPollDocuments,
 } from "../document-presentation";
-import { getAskKnowledgeInstanceKey } from "../knowledge-page-state";
+import {
+  createKnowledgeDocumentSearchParams,
+  getAskKnowledgeInstanceKey,
+  getKnowledgeDocumentId,
+} from "../knowledge-page-state";
 
 export function Component() {
   const space = useSpaceLayout();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<string | null>(null);
-  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
+  const selectedDocumentId = getKnowledgeDocumentId(searchParams);
   const [deleteTarget, setDeleteTarget] = useState<Document | null>(null);
   const queryKey = documentQueryKeys.list(space.id);
   const documentsQuery = useInfiniteQuery({
@@ -52,6 +58,13 @@ export function Component() {
   const firstDocumentPage = documentsQuery.data?.pages[0];
   const isTrueZero = isTrueZeroDocumentList(documents, firstDocumentPage?.nextCursor);
   const summary = getDocumentSummary(documents);
+
+  function openDocument(documentId: string | null) {
+    setSearchParams(
+      createKnowledgeDocumentSearchParams(searchParams, documentId),
+      { replace: documentId === null },
+    );
+  }
 
   async function handleReindex(document: Document) {
     setNotice(null);
@@ -77,7 +90,7 @@ export function Component() {
       await deleteMutation.mutateAsync(deletedId);
       queryClient.removeQueries({ queryKey: documentQueryKeys.detail(space.id, deletedId), exact: true });
       await queryClient.invalidateQueries({ queryKey, exact: true });
-      if (selectedDocumentId === deletedId) setSelectedDocumentId(null);
+      if (selectedDocumentId === deletedId) openDocument(null);
       setDeleteTarget(null);
       setNotice("Document and indexed knowledge removed from this Space.");
     } catch {
@@ -151,7 +164,7 @@ export function Component() {
         <>
           <AskKnowledge
             key={getAskKnowledgeInstanceKey(space.id)}
-            onOpenSource={setSelectedDocumentId}
+            onOpenSource={openDocument}
             spaceId={space.id}
           />
 
@@ -182,7 +195,7 @@ export function Component() {
                 documents={documents}
                 onDelete={(document) => { deleteMutation.reset(); setDeleteTarget(document); }}
                 onReindex={(document) => void handleReindex(document)}
-                onView={(document) => setSelectedDocumentId(document.id)}
+                onView={(document) => openDocument(document.id)}
                 reindexingId={reindexMutation.isPending ? (reindexMutation.variables ?? null) : null}
                 spaceRole={space.role}
               />
@@ -206,7 +219,7 @@ export function Component() {
 
       <DocumentDetailDialog
         documentId={selectedDocumentId}
-        onOpenChange={(open) => { if (!open) setSelectedDocumentId(null); }}
+        onOpenChange={(open) => { if (!open) openDocument(null); }}
         spaceId={space.id}
       />
 

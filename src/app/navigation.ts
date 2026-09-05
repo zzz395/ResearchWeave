@@ -1,7 +1,7 @@
 export interface PrimaryNavigationDestination {
-  icon: "research" | "spaces" | "connections";
+  icon: "research" | "spaces" | "agents" | "connections";
   label: string;
-  to: "/research" | "/spaces" | "/connections";
+  to: "/research" | "/spaces" | "/agents" | "/connections";
 }
 
 export interface PrimaryNavigationGroup {
@@ -18,6 +18,7 @@ export const primaryNavigationGroups: readonly PrimaryNavigationGroup[] = [
     label: "Workspace",
     destinations: [
       { icon: "spaces", label: "Spaces", to: "/spaces" },
+      { icon: "agents", label: "Agents", to: "/agents" },
       { icon: "connections", label: "Connections", to: "/connections" },
     ],
   },

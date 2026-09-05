@@ -75,7 +75,7 @@ describe("Agent REST API", () => {
     expect(JSON.stringify(detail)).not.toContain("apiKey");
   });
 
-  it("creates with server identity, replays idempotently, and denies outsiders and former members", async () => {
+  it("creates with server identity, replays idempotently, and safely denies outsiders", async () => {
     const { app, spaceRepository, agentRepository } = createTestApp();
     const owner = request.agent(app);
     const outsider = request.agent(app);
@@ -116,9 +116,66 @@ describe("Agent REST API", () => {
 
     spaceRepository.addMember(space.id, outsiderUser.id);
     await outsider.get(`/api/v1/agent-tasks/${created.task.id}`).expect(200);
-    spaceRepository.memberships.delete(`${space.id}:${outsiderUser.id}`);
-    const former = await outsider.get(`/api/v1/agent-tasks/${created.task.id}`).expect(404);
-    expect(errorEnvelopeSchema.parse(former.body).error.code).toBe("agent_task_not_found");
+  });
+
+  it("returns resource-safe errors for every Agent endpoint after Space access is revoked", async () => {
+    const { app, spaceRepository } = createTestApp();
+    const owner = request.agent(app);
+    const formerMember = request.agent(app);
+    await register(owner, "agent-revoke-owner@example.com");
+    const formerMemberUser = await register(formerMember, "agent-revoke-member@example.com");
+    const space = await createSpace(owner);
+    const endpoint = `/api/v1/spaces/${space.id}/agent-tasks`;
+    const created = agentTaskCreateResponseSchema.parse(
+      (await owner.post(endpoint).set("Origin", origin).send(taskInput(1)).expect(202)).body,
+    );
+
+    spaceRepository.addMember(space.id, formerMemberUser.id);
+    await formerMember.get(endpoint).expect(200);
+    await formerMember.get(`/api/v1/agent-tasks/${created.task.id}`).expect(200);
+    await formerMember.get(`/api/v1/agent-runs/${created.run.id}`).expect(200);
+    await formerMember.get(`/api/v1/agent-runs/${created.run.id}/steps`).expect(200);
+
+    spaceRepository.memberships.delete(`${space.id}:${formerMemberUser.id}`);
+
+    const spaceResponses = [
+      await formerMember.get(endpoint).expect(404),
+      await formerMember
+        .post(endpoint)
+        .set("Origin", origin)
+        .send(taskInput(8))
+        .expect(404),
+    ];
+    for (const response of spaceResponses) {
+      expect(errorEnvelopeSchema.parse(response.body).error.code).toBe("space_not_found");
+    }
+
+    const taskResponses = [
+      await formerMember.get(`/api/v1/agent-tasks/${created.task.id}`).expect(404),
+      await formerMember
+        .post(`/api/v1/agent-tasks/${created.task.id}/runs`)
+        .set("Origin", origin)
+        .send({ clientRequestId: "40000000-0000-4000-8000-000000000008" })
+        .expect(404),
+    ];
+    for (const response of taskResponses) {
+      expect(errorEnvelopeSchema.parse(response.body).error.code).toBe("agent_task_not_found");
+    }
+
+    const runResponses = [
+      await formerMember.get(`/api/v1/agent-runs/${created.run.id}`).expect(404),
+      await formerMember.get(`/api/v1/agent-runs/${created.run.id}/steps`).expect(404),
+      await formerMember
+        .post(`/api/v1/agent-runs/${created.run.id}/cancel`)
+        .set("Origin", origin)
+        .send({})
+        .expect(404),
+    ];
+    for (const response of runResponses) {
+      const error = errorEnvelopeSchema.parse(response.body).error;
+      expect(error.code).toBe("agent_run_not_found");
+      expect(error).not.toHaveProperty("details");
+    }
   });
 
   it("paginates tasks and serves authorized detail, run, and trace reads", async () => {

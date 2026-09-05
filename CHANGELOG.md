@@ -2,6 +2,29 @@
 
 All notable changes to ResearchWeave are documented in this file.
 
+## [0.9.0] - Unreleased
+
+Phase 9 implementation, including Phase 9C-7, is complete. The `0.9.0` package metadata is prepared while final checkpoint validation, release closure, and the `v0.9.0` tag remain pending.
+
+### Added
+
+- Space-authorized Agent Tasks with immutable prompts, durable retry Runs, cancellation, and ordered execution traces.
+- A bounded production Agent Runtime with PostgreSQL claims, leases, heartbeats, fencing, crash recovery, and lifecycle-owned readiness.
+- An immutable three-tool registry for arXiv search, Knowledge retrieval, and grounded answers backed by existing application services.
+- Responsive Agent definition, task ledger, task history, Run trace, and server-validated evidence interfaces.
+- Phase 9 PostgreSQL lifecycle and concurrency acceptance as a required continuous-integration gate.
+
+### Changed
+
+- Added Agents to Workspace navigation and URL-backed task filters, Run deep links, and Knowledge document citations.
+- Expanded authorization regression coverage across all Agent Task and Run reads and commands after Space access revocation.
+- Advanced the implementation roadmap to the completed Phase 9 implementation and prepared the `0.9.0` package metadata for pending release closure.
+
+### Runtime impact
+
+- The Agent client consumes the existing REST contracts through durable polling; no Agent-specific WebSocket protocol was added.
+- Existing Agent Runtime, database schema, and REST contracts are unchanged by the Phase 9C-7 client implementation.
+
 ## [0.8.1] - 2026-09-03
 
 ### Added
