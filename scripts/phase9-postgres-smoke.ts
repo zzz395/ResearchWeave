@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 
 import { and, count, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import pino from "pino";
 import postgres from "postgres";
 import { z } from "zod";
 
@@ -29,6 +30,7 @@ import type {
   AgentDecisionProviderInput,
 } from "../server/modules/agents/decision-provider";
 import { createAgentRunExecutor } from "../server/modules/agents/run-executor";
+import { createAgentWorker } from "../server/modules/agents/worker";
 import { agentToolExecutionResultSchema } from "../server/modules/agents/tools/contracts";
 import { createAgentToolRegistry } from "../server/modules/agents/tools/registry";
 
@@ -1217,6 +1219,149 @@ async function runRepositorySmoke(): Promise<void> {
   assert.equal(retryReplayWithoutRuntime.status, "existing");
   pass("Repository retry attempt and idempotency race serialization");
 
+  const expiryOwner = "91000000-0000-4000-8000-000000000090";
+  const expiryStartedAt = new Date("2026-09-03T01:05:00.000Z");
+  const expiryAt = new Date("2026-09-03T01:05:01.000Z");
+  const expiryDeadline = new Date("2026-09-03T01:08:00.000Z");
+  async function createExpiryCase(index: number, reserveStep = false) {
+    const suffix = String(90 + index).padStart(12, "0");
+    const taskId = `41000000-0000-4000-8000-${suffix}`;
+    const runId = `51000000-0000-4000-8000-${suffix}`;
+    const created = await repository.createTaskWithInitialRun({
+      ...createAInput,
+      taskId,
+      runId,
+      clientRequestId: `91000000-0000-4000-8000-${suffix}`,
+      requestFingerprint: (90 + index).toString(16).padStart(64, "0"),
+      prompt: `Expired lease fencing case ${index}`,
+      now: expiryStartedAt,
+    });
+    assert.equal(created.status, "created");
+    await database.db
+      .update(agentRuns)
+      .set({
+        status: "running",
+        leaseOwnerId: expiryOwner,
+        leaseGeneration: 1,
+        leaseExpiresAt: expiryAt,
+        startedAt: expiryStartedAt,
+        deadlineAt: expiryDeadline,
+        updatedAt: expiryStartedAt,
+      })
+      .where(eq(agentRuns.id, runId));
+    const fence = { runId, leaseOwnerId: expiryOwner, leaseGeneration: 1 };
+    let stepId: string | undefined;
+    if (reserveStep) {
+      stepId = `61000000-0000-4000-8000-${suffix}`;
+      const reservedStep = await repository.reserveStep({
+        ...fence,
+        stepId,
+        toolName: "search_arxiv",
+        safeArguments: { query: `expiry case ${index}` },
+        now: new Date(expiryAt.getTime() - 1),
+      });
+      assert.equal(reservedStep.status, "reserved");
+    }
+    return { fence, stepId };
+  }
+
+  const heartbeatExpiry = await createExpiryCase(1);
+  assert.equal((await repository.heartbeatLease({
+    ...heartbeatExpiry.fence,
+    now: expiryAt,
+    leaseDurationMs: 60_000,
+  })).status, "stale");
+  const reserveExpiry = await createExpiryCase(2);
+  assert.equal((await repository.reserveStep({
+    ...reserveExpiry.fence,
+    stepId: "61000000-0000-4000-8000-000000000092",
+    toolName: "search_arxiv",
+    safeArguments: { query: "expired reserve" },
+    now: expiryAt,
+  })).status, "stale");
+  const completeStepExpiry = await createExpiryCase(3, true);
+  assert.equal((await repository.completeToolStepWithEvidence({
+    ...completeStepExpiry.fence,
+    stepId: completeStepExpiry.stepId!,
+    observation: { resultCount: 0 },
+    evidence: [],
+    contextBytes: 0,
+    now: expiryAt,
+  })).status, "stale");
+  const failStepExpiry = await createExpiryCase(4, true);
+  assert.equal((await repository.failStep({
+    ...failStepExpiry.fence,
+    stepId: failStepExpiry.stepId!,
+    errorCode: "agent_tool_timeout",
+    contextBytes: 0,
+    now: expiryAt,
+  })).status, "stale");
+  const completeRunExpiry = await createExpiryCase(5);
+  assert.equal((await repository.completeRun({
+    ...completeRunExpiry.fence,
+    finalStepId: "61000000-0000-4000-8000-000000000095",
+    finalResult: {
+      status: "insufficient_context",
+      answer: "Insufficient context.",
+      evidenceIds: [],
+    },
+    now: expiryAt,
+  })).status, "stale");
+  const failRunExpiry = await createExpiryCase(6);
+  assert.equal((await repository.failRun({
+    ...failRunExpiry.fence,
+    errorCode: "agent_provider_unavailable",
+    now: new Date(expiryAt.getTime() + 1),
+  })).status, "stale");
+  pass("Repository rejects every ordinary execution write at or after lease expiry");
+
+  const cancellationPriority = await createExpiryCase(7);
+  const cancellationRequested = await repository.cancelRun(
+    cancellationPriority.fence.runId,
+    OWNER_ID,
+    new Date(expiryAt.getTime() - 1),
+  );
+  assert.equal(cancellationRequested.status, "cancellation_requested");
+  assert.equal((await repository.reserveStep({
+    ...cancellationPriority.fence,
+    stepId: "61000000-0000-4000-8000-000000000097",
+    toolName: "search_arxiv",
+    safeArguments: { query: "cancellation priority" },
+    now: expiryAt,
+  })).status, "cancel_requested");
+
+  const accessPriority = await createExpiryCase(8);
+  await database.db
+    .delete(spaceMembers)
+    .where(and(eq(spaceMembers.spaceId, OTHER_SPACE_ID), eq(spaceMembers.userId, OWNER_ID)));
+  assert.equal((await repository.reserveStep({
+    ...accessPriority.fence,
+    stepId: "61000000-0000-4000-8000-000000000098",
+    toolName: "search_arxiv",
+    safeArguments: { query: "access priority" },
+    now: expiryAt,
+  })).status, "access_revoked");
+  await database.db.insert(spaceMembers).values({
+    spaceId: OTHER_SPACE_ID,
+    userId: OWNER_ID,
+    role: "owner",
+    joinedAt: BASE_TIME,
+  });
+
+  const deadlinePriority = await createExpiryCase(9);
+  await database.db
+    .update(agentRuns)
+    .set({ deadlineAt: expiryAt })
+    .where(eq(agentRuns.id, deadlinePriority.fence.runId));
+  assert.equal((await repository.reserveStep({
+    ...deadlinePriority.fence,
+    stepId: "61000000-0000-4000-8000-000000000099",
+    toolName: "search_arxiv",
+    safeArguments: { query: "deadline priority" },
+    now: expiryAt,
+  })).status, "deadline_exceeded");
+  pass("Repository preserves cancellation, access, and deadline priority over expiry");
+
   await database.db.delete(researchSpaces).where(eq(researchSpaces.id, OTHER_SPACE_ID));
   const [repositoryTasks] = await database.db.select({ count: count() }).from(agentTasks);
   assert.equal(repositoryTasks.count, 0);
@@ -1600,6 +1745,345 @@ async function runExecutorSmoke(): Promise<void> {
   await database.db.delete(researchSpaces).where(eq(researchSpaces.id, executorSpaceId));
 }
 
+async function runWorkerSmoke(): Promise<void> {
+  const repository = createDrizzleAgentRepository(database);
+  const workerSpaceId = "23000000-0000-4000-8000-000000000001";
+  const workerLogger = pino({ level: "silent" });
+  const workerTiming = {
+    idlePollMs: 20,
+    leaseDurationMs: 400,
+    heartbeatIntervalMs: 50,
+    heartbeatRetryMs: 20,
+    leaseSafetyMarginMs: 100,
+    shutdownGraceMs: 100,
+    shutdownSettleMs: 100,
+  } as const;
+  let generatedId = 0;
+  const nextExecutionId = () => {
+    generatedId += 1;
+    return `a4000000-0000-4000-8000-${String(generatedId).padStart(12, "0")}`;
+  };
+
+  await database.db.insert(researchSpaces).values({
+    id: workerSpaceId,
+    name: "Phase 9 Worker Space",
+    description: null,
+    ownerId: OWNER_ID,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  await database.db.insert(spaceMembers).values({
+    spaceId: workerSpaceId,
+    userId: OWNER_ID,
+    role: "owner",
+    joinedAt: new Date(),
+  });
+
+  async function createWorkerRun(index: number) {
+    const suffix = String(index).padStart(12, "0");
+    const runId = `53000000-0000-4000-8000-${suffix}`;
+    const created = await repository.createTaskWithInitialRun({
+      taskId: `43000000-0000-4000-8000-${suffix}`,
+      runId,
+      spaceId: workerSpaceId,
+      agentId: AGENT_ID,
+      actorUserId: OWNER_ID,
+      prompt: `Worker smoke task ${index}`,
+      clientRequestId: `94000000-0000-4000-8000-${suffix}`,
+      requestFingerprint: (200 + index).toString(16).padStart(64, "0"),
+      providerModel: "phase9-worker-smoke",
+      now: new Date(),
+    });
+    assert.equal(created.status, "created");
+    return runId;
+  }
+
+  function workerRegistry(input?: {
+    onExecute?: (signal: AbortSignal) => Promise<void>;
+    withEvidence?: boolean;
+  }) {
+    return createAgentToolRegistry([{
+      name: "search_arxiv",
+      description: "Deterministic read-only Worker smoke Tool.",
+      argumentsSchema: z.object({ query: z.string().trim().min(1) }).strict(),
+      resultSchema: agentToolExecutionResultSchema,
+      isAvailable: () => true,
+      execute: async ({ signal }) => {
+        await input?.onExecute?.(signal);
+        return {
+          observation: { resultCount: input?.withEvidence ? 1 : 0 },
+          evidence: input?.withEvidence
+            ? [{
+                kind: "arxiv_abstract" as const,
+                paperId: null,
+                canonicalArxivId: "2609.67890",
+                versionedArxivId: "2609.67890v1",
+                sourceVersion: 1,
+                title: "Worker Core Boundary Smoke",
+                url: "https://arxiv.org/abs/2609.67890v1",
+                excerpt: "Durable evidence published through the Worker and Executor boundary.",
+              }]
+            : [],
+        };
+      },
+    }]);
+  }
+
+  function workerExecutor(
+    decisions: AgentDecision[],
+    toolRegistry = workerRegistry(),
+  ) {
+    const scripted = [...decisions];
+    return createAgentRunExecutor({
+      repository,
+      toolRegistry,
+      decisionProvider: {
+        model: "phase9-worker-smoke",
+        decide: () => {
+          const decision = scripted.shift();
+          if (!decision) throw new Error("Missing scripted Worker smoke decision.");
+          return Promise.resolve(decision);
+        },
+      },
+      now: () => new Date(),
+      createId: nextExecutionId,
+    });
+  }
+
+  async function waitForRunStatus(runId: string, status: "completed" | "cancelled") {
+    const timeoutAt = Date.now() + 5_000;
+    while (Date.now() < timeoutAt) {
+      const record = await repository.readRunForMember(runId, OWNER_ID);
+      if (record.status === "ok" && record.record.record.status === status) return record.record;
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`Worker smoke Run ${runId} did not reach ${status}.`);
+  }
+
+  const toolDecision: AgentDecision = {
+    kind: "tool_call",
+    toolName: "search_arxiv",
+    arguments: { query: "worker heartbeat" },
+  };
+  const answeredDecision: AgentDecision = {
+    kind: "final_answer",
+    result: { status: "answered", answer: "Worker result [E1]", evidenceIds: ["E1"] },
+  };
+  const insufficientDecision: AgentDecision = {
+    kind: "final_answer",
+    result: {
+      status: "insufficient_context",
+      answer: "Insufficient context.",
+      evidenceIds: [],
+    },
+  };
+
+  const heartbeatRunId = await createWorkerRun(1);
+  let releaseHeartbeatTool!: () => void;
+  let markHeartbeatToolStarted!: () => void;
+  const heartbeatToolStarted = new Promise<void>((resolve) => {
+    markHeartbeatToolStarted = resolve;
+  });
+  const heartbeatToolRelease = new Promise<void>((resolve) => {
+    releaseHeartbeatTool = resolve;
+  });
+  let heartbeatCount = 0;
+  const heartbeatRepository = {
+    claimRun: (input: Parameters<typeof repository.claimRun>[0]) => repository.claimRun(input),
+    heartbeatLease: async (input: Parameters<typeof repository.heartbeatLease>[0]) => {
+      heartbeatCount += 1;
+      return repository.heartbeatLease(input);
+    },
+  };
+  const heartbeatWorker = createAgentWorker({
+    repository: heartbeatRepository,
+    executor: workerExecutor(
+      [toolDecision, answeredDecision],
+      workerRegistry({
+        withEvidence: true,
+        onExecute: async () => {
+          markHeartbeatToolStarted();
+          await heartbeatToolRelease;
+        },
+      }),
+    ),
+    logger: workerLogger,
+    timing: workerTiming,
+    createId: () => "95000000-0000-4000-8000-000000000001",
+  });
+  await heartbeatWorker.start();
+  await heartbeatToolStarted;
+  const heartbeatsAtToolStart = heartbeatCount;
+  await new Promise<void>((resolve) => setTimeout(resolve, 130));
+  assert(heartbeatCount > heartbeatsAtToolStart, "Periodic heartbeat must run during unresolved Tool I/O.");
+  releaseHeartbeatTool();
+  const heartbeatCompleted = await waitForRunStatus(heartbeatRunId, "completed");
+  await heartbeatWorker.stop();
+  assert.deepEqual(heartbeatCompleted.finalEvidenceIds, ["E1"]);
+  pass("Worker claims and completes a real Executor chain while heartbeating unresolved I/O");
+
+  const cancellationRunId = await createWorkerRun(2);
+  let markCancellationToolStarted!: () => void;
+  const cancellationToolStarted = new Promise<void>((resolve) => {
+    markCancellationToolStarted = resolve;
+  });
+  const cancellationWorker = createAgentWorker({
+    repository,
+    executor: workerExecutor(
+      [toolDecision],
+      workerRegistry({
+        onExecute: (signal) =>
+          new Promise<void>((_resolve, reject) => {
+            markCancellationToolStarted();
+            signal.addEventListener(
+              "abort",
+              () => reject(signal.reason instanceof Error ? signal.reason : new Error("aborted")),
+              { once: true },
+            );
+          }),
+      }),
+    ),
+    logger: workerLogger,
+    timing: workerTiming,
+    createId: () => "95000000-0000-4000-8000-000000000002",
+  });
+  await cancellationWorker.start();
+  await cancellationToolStarted;
+  const requested = await repository.cancelRun(cancellationRunId, OWNER_ID, new Date());
+  assert.equal(requested.status, "cancellation_requested");
+  const cancelled = await waitForRunStatus(cancellationRunId, "cancelled");
+  await cancellationWorker.stop();
+  assert.deepEqual(cancelled.finalEvidenceIds, []);
+  pass("Worker observes durable cancellation by heartbeat and prevents late publication");
+
+  const recoveryRunId = await createWorkerRun(3);
+  let recoveryClaim: Awaited<ReturnType<typeof repository.claimRun>> | undefined;
+  let markRecoveryToolStarted!: () => void;
+  const recoveryToolStarted = new Promise<void>((resolve) => {
+    markRecoveryToolStarted = resolve;
+  });
+  const firstRecoveryWorker = createAgentWorker({
+    repository: {
+      claimRun: async (input) => {
+        const result = await repository.claimRun(input);
+        recoveryClaim = result;
+        return result;
+      },
+      heartbeatLease: (input) => repository.heartbeatLease(input),
+    },
+    executor: workerExecutor(
+      [toolDecision],
+      workerRegistry({
+        onExecute: (signal) =>
+          new Promise<void>((_resolve, reject) => {
+            markRecoveryToolStarted();
+            signal.addEventListener(
+              "abort",
+              () => reject(signal.reason instanceof Error ? signal.reason : new Error("aborted")),
+              { once: true },
+            );
+          }),
+      }),
+    ),
+    logger: workerLogger,
+    timing: workerTiming,
+    createId: () => "95000000-0000-4000-8000-000000000003",
+  });
+  await firstRecoveryWorker.start();
+  await recoveryToolStarted;
+  await firstRecoveryWorker.stop();
+  assert.equal(recoveryClaim?.status, "claimed");
+  if (!recoveryClaim || recoveryClaim.status !== "claimed") {
+    throw new Error("Expected the first recovery Worker claim.");
+  }
+  const firstGeneration = recoveryClaim.claim.run.leaseGeneration;
+  const firstStep = recoveryClaim.claim.incompleteToolStep ??
+    (await database.db
+      .select()
+      .from(agentRunSteps)
+      .where(eq(agentRunSteps.runId, recoveryRunId)))[0];
+  assert(firstStep);
+  await new Promise<void>((resolve) => setTimeout(resolve, workerTiming.leaseDurationMs + 100));
+  assert.equal((await repository.heartbeatLease({
+    runId: recoveryRunId,
+    leaseOwnerId: recoveryClaim.claim.run.leaseOwnerId!,
+    leaseGeneration: firstGeneration,
+    now: new Date(),
+    leaseDurationMs: workerTiming.leaseDurationMs,
+  })).status, "stale");
+  assert.equal((await repository.completeToolStepWithEvidence({
+    runId: recoveryRunId,
+    leaseOwnerId: recoveryClaim.claim.run.leaseOwnerId!,
+    leaseGeneration: firstGeneration,
+    stepId: firstStep.id,
+    observation: { resultCount: 0 },
+    evidence: [],
+    contextBytes: 0,
+    now: new Date(),
+  })).status, "stale");
+
+  let replacementGeneration = 0;
+  const replacementWorker = createAgentWorker({
+    repository: {
+      claimRun: async (input) => {
+        const result = await repository.claimRun(input);
+        if (result.status === "claimed") replacementGeneration = result.claim.run.leaseGeneration;
+        return result;
+      },
+      heartbeatLease: (input) => repository.heartbeatLease(input),
+    },
+    executor: workerExecutor([insufficientDecision], workerRegistry()),
+    logger: workerLogger,
+    timing: workerTiming,
+    createId: () => "95000000-0000-4000-8000-000000000004",
+  });
+  await replacementWorker.start();
+  await waitForRunStatus(recoveryRunId, "completed");
+  await replacementWorker.stop();
+  assert(replacementGeneration > firstGeneration);
+  const recoveryTrace = await repository.readRunTraceForMember(recoveryRunId, OWNER_ID);
+  assert.equal(recoveryTrace.status, "ok");
+  if (recoveryTrace.status === "ok") {
+    const toolSteps = recoveryTrace.record.steps.filter((step) => step.kind === "tool_call");
+    assert.equal(toolSteps.length, 1);
+    assert.equal(toolSteps[0]?.executionCount, 2);
+  }
+  pass("Worker shutdown leaves recovery to lease expiry and a higher-generation Worker resumes the Tool Step");
+
+  const competitionRunId = await createWorkerRun(4);
+  let durableExecutions = 0;
+  const competitionExecutor = () => {
+    const inner = workerExecutor([insufficientDecision]);
+    return {
+      execute: async (input: Parameters<typeof inner.execute>[0]) => {
+        durableExecutions += 1;
+        return inner.execute(input);
+      },
+    };
+  };
+  const competitorA = createAgentWorker({
+    repository,
+    executor: competitionExecutor(),
+    logger: workerLogger,
+    timing: workerTiming,
+    createId: () => "95000000-0000-4000-8000-000000000005",
+  });
+  const competitorB = createAgentWorker({
+    repository,
+    executor: competitionExecutor(),
+    logger: workerLogger,
+    timing: workerTiming,
+    createId: () => "95000000-0000-4000-8000-000000000006",
+  });
+  await Promise.all([competitorA.start(), competitorB.start()]);
+  await waitForRunStatus(competitionRunId, "completed");
+  await Promise.all([competitorA.stop(), competitorB.stop()]);
+  assert.equal(durableExecutions, 1);
+  pass("Two Workers competing for one Run produce one durable execution");
+
+  await database.db.delete(researchSpaces).where(eq(researchSpaces.id, workerSpaceId));
+}
+
 try {
   await assertFreshDisposableTarget();
   await migrateFromPhase8Baseline();
@@ -1610,6 +2094,7 @@ try {
   await runAttributionAndCascadeSmoke();
   await runRepositorySmoke();
   await runExecutorSmoke();
+  await runWorkerSmoke();
 } finally {
   await database.close();
   await raw.end({ timeout: 5 });

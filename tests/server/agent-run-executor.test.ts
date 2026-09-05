@@ -19,7 +19,10 @@ import type {
   AgentRepository,
   AgentWorkerFence,
 } from "../../server/modules/agents/repository";
-import { createAgentRunExecutor } from "../../server/modules/agents/run-executor";
+import {
+  createAgentRunExecutor,
+  type AgentExecutionLeaseCheckpoint,
+} from "../../server/modules/agents/run-executor";
 import {
   agentToolExecutionResultSchema,
   AgentToolError,
@@ -430,6 +433,7 @@ function harness(input: {
   tool?: TestTool;
   run?: Partial<AgentRunRecord>;
   providerModel?: string;
+  leaseCheckpoint?: AgentExecutionLeaseCheckpoint;
 } = {}) {
   const repository = new RepositoryDouble(input.run);
   const decisions = [...(input.decisions ?? [])];
@@ -457,6 +461,7 @@ function harness(input: {
         leaseOwnerId: LEASE_ID,
         leaseGeneration,
         signal,
+        ...(input.leaseCheckpoint ? { leaseCheckpoint: input.leaseCheckpoint } : {}),
       }),
   };
 }
@@ -495,6 +500,67 @@ describe("AgentRunExecutor", () => {
       safeArguments: { query: "agents" },
       observation: { summary: "Safe observation" },
     });
+  });
+
+  it("checkpoints the worker-owned lease after each persisted Tool boundary", async () => {
+    const observedBoundaries: string[] = [];
+    const testRef: { current?: ReturnType<typeof harness> } = {};
+    const leaseCheckpoint = vi.fn(() => {
+      observedBoundaries.push(testRef.current?.repository.events.at(-1) ?? "missing");
+      return Promise.resolve("continue" as const);
+    });
+    const test = harness({ decisions: [toolDecision, groundedFinal], leaseCheckpoint });
+    testRef.current = test;
+
+    expect(await test.execute()).toEqual({ status: "completed", runId: RUN_ID });
+    expect(observedBoundaries).toEqual(["reserve", "complete-tool"]);
+
+    const failedBoundaries: string[] = [];
+    const failedRef: { current?: ReturnType<typeof harness> } = {};
+    const failedCheckpoint = vi.fn(() => {
+      failedBoundaries.push(failedRef.current?.repository.events.at(-1) ?? "missing");
+      return Promise.resolve("continue" as const);
+    });
+    const failed = harness({
+      decisions: [toolDecision, insufficientFinal],
+      tool: tool(() => {
+        throw new AgentToolError("research_upstream_timeout");
+      }),
+      leaseCheckpoint: failedCheckpoint,
+    });
+    failedRef.current = failed;
+
+    expect(await failed.execute()).toEqual({ status: "completed", runId: RUN_ID });
+    expect(failedBoundaries).toEqual(["reserve", "fail-step:research_upstream_timeout"]);
+  });
+
+  it("stops locally when the worker lease checkpoint declines or throws", async () => {
+    const executeTool = vi.fn(() =>
+      Promise.resolve({ observation: { mustNotRun: true }, evidence: [] }),
+    );
+    const stopped = harness({
+      decisions: [toolDecision],
+      tool: tool(executeTool),
+      leaseCheckpoint: () => Promise.resolve("stop"),
+    });
+
+    expect(await stopped.execute()).toEqual({ status: "interrupted", runId: RUN_ID });
+    expect(stopped.repository.events).toContain("reserve");
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(stopped.repository.state.run.status).toBe("running");
+
+    const rejected = harness({
+      decisions: [toolDecision],
+      tool: tool(executeTool),
+      leaseCheckpoint: () => Promise.reject(new Error("database secret")),
+    });
+    expect(await rejected.execute()).toEqual({
+      status: "interrupted",
+      runId: RUN_ID,
+      errorCode: "agent_persistence_failed",
+    });
+    expect(JSON.stringify(rejected.repository.state)).not.toContain("database secret");
+    expect(executeTool).not.toHaveBeenCalled();
   });
 
   it("supports direct insufficient_context without executing a Tool", async () => {
