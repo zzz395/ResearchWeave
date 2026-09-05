@@ -7,11 +7,12 @@
 - Freeze accepted: **2026-09-03**
 - Phase 9 implementation status: **COMPLETE**
 - Phase 9C-7 implementation status: **COMPLETE**
-- Source / Architecture Review: **Implementation review complete; findings closure review pending**
-- Final checkpoint: **PENDING**
-- Release closure: **PENDING**
-- Package metadata: **0.9.0 PREPARED**
-- `v0.9.0` tag: **NOT YET CREATED**
+- Source / Architecture Review: **COMPLETE**
+- Findings closure: **COMPLETE**
+- Final checkpoint: **PASS**
+- Release closure: **COMPLETE**
+- Package version: **0.9.0**
+- `v0.9.0` tag: **CREATED**
 - Architecture freeze: **PASS**
 
 This document is the frozen Phase 9 design. It records the decisions that govern the Agent migration, API, worker, tool registry, provider adapter, and UI implementation.
@@ -581,4 +582,4 @@ The following decisions were explicitly accepted on 2026-09-03 before implementa
 - [x] failure codes and acceptance-test matrix;
 - [x] all listed non-goals.
 
-Phase 9 implementation followed the frozen staged order. Final checkpoint validation and release closure remain pending. Future changes to these decisions require a new architecture review.
+Phase 9 implementation followed the frozen staged order. Final checkpoint validation passed, release closure is complete, and the completed baseline is recorded by `v0.9.0`. Future changes to these decisions require a new architecture review.
