@@ -81,11 +81,11 @@ Search real arXiv metadata
 → Import PDF into a Knowledge Base (explicit action)
 → Parse and index successfully
 → Ask grounded questions with citations
-→ Compare selected evidence or papers
-→ Run a bounded agent task using the same services
+→ Compare selected Saved Papers from stored metadata and abstracts
+→ Run a bounded agent task using its approved Research and Knowledge tools
 ```
 
-An arXiv failure ends in an error state with retry guidance. It never creates fallback papers. “Full-document grounded analysis” is shown only after the document indexing state is `ready`.
+An arXiv failure ends in an error state with retry guidance. It never creates fallback papers. “Full-document grounded analysis” is shown only after the document indexing state is `ready`. The `v0.10.0` Paper Comparison workflow is separate: it uses stored arXiv metadata and abstracts only, not imported or indexed documents.
 
 ### Collaboration workflow
 
@@ -141,7 +141,7 @@ Choose Agent definition
 | Ask Knowledge | Ask within selected knowledge base; show answer, citations, and no-result state. | General ungrounded chat disguised as RAG. |
 | Paper Search | Query arXiv and show real response/failure state. | Fake offline papers. |
 | Paper Detail | Metadata, abstract, source links, saved/import state, abstract-based summary. | Full-document claims unless indexed. |
-| Paper Comparison | Compare selected metadata/abstracts or indexed evidence with visible scope labels. | Comparing unavailable full text. |
+| Paper Comparison | Compare two to four current-Space Saved Papers from stored arXiv metadata and abstracts with a visible scope label. | PDF, full-text, indexed-document, mixed-evidence, or persisted comparison claims. |
 | Agents | Agent purpose, allowed tools, limits, and recent runs. | Implementing tool business logic. |
 | Tasks | Create/filter task runs and show durable status. | Timer-based simulated completion. |
 | Execution Trace | Ordered steps, tool name, redacted input, observation, timing, errors, citations, final result. | Hidden chain-of-thought. Store operational trace, not private model reasoning. |
@@ -189,6 +189,6 @@ The intended permission model is simple and explainable: authenticated user; Res
 | Research and Knowledge are separate | External metadata/abstract discovery is not equivalent to possessing and indexing full text. |
 | REST plus WebSocket | REST fits durable resource operations and history; WebSocket fits live messages, presence, and status notifications. |
 | Abstract summaries are labelled | The model cannot claim experimental detail it has not received. |
-| Agents call tools that call services | The application has one implementation of arXiv, retrieval, documents, and comparison; Agent is orchestration, not duplicate business logic. |
+| Agents call tools that call services | The application has one implementation of arXiv, retrieval, and grounded answers; Agent is orchestration, not duplicate business logic. Paper Comparison is a separate service and is not an Agent tool in `v0.10.0`. |
 | One modular monolith | The workload and team size do not justify distributed systems; module boundaries remain interview-friendly and testable. |
 | No multi-agent system initially | Four deterministic tools and one bounded loop are sufficient to demonstrate real tool calling and traceability. |

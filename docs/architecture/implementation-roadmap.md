@@ -4,7 +4,7 @@
 
 ResearchWeave progresses from a secure engineering foundation through collaboration, real academic discovery, durable document indexing, grounded knowledge, integrated workflows, and bounded agent orchestration. Every completed phase must represent verifiable behavior backed by durable state or a real external integration; fixtures and timers never stand in for product capability.
 
-The product implementation baseline is complete through **Phase 9 — Tool-Calling Agent & Execution Trace**, including Phase 9C-7, and is released as `v0.9.0`. Phase 10 is the next planned product phase and has not started.
+The product implementation baseline is complete through **Phase 10 — Product Integration Experience**, including Phase 10A–10D, and is released as `v0.10.0`. Remaining repository audit, reproducibility, evaluation, and portfolio work is tracked separately as unnumbered post-Phase-10 work rather than as an unimplemented product phase.
 
 ## Architecture & Product Definition — Completed
 
@@ -220,24 +220,62 @@ Phase 9 implements one system-managed Research Agent, a production lifecycle-own
 - Traces exclude chain-of-thought, credentials, unrestricted document text, and raw provider payloads.
 - Integration tests cover success, no evidence, provider failure, cancellation, recovery, and authorization failure.
 
-## Phase 10 — Integration, Evaluation & Portfolio Polish — Planned
+## Phase 10 — Product Integration Experience — Completed with v0.10.0
 
-**Goal:** Prove the complete product, remove misleading states, and prepare a concise, explainable demonstration.
+**Goal:** Integrate durable cross-workspace read models and an evidence-bounded paper comparison workflow into the authenticated product experience.
 
-**Planned deliverables**
+### Phase 10A — Durable Workspace Read Models — Completed
 
-- Overview and unified Activity derived only from real queries and durable events
-- evidence-scoped paper comparison backed by a dedicated service
-- browser end-to-end tests for collaboration, discovery, ingestion, grounded knowledge, and Agent workflows
-- automated and manual accessibility, responsive-layout, security, and error-state review
-- authorization, CSRF, WebSocket Origin, upload, external-integration, retrieval, and tool-boundary audits
-- performance budgets, retrieval/groundedness evaluation, accurate setup instructions, demo script, limitations, and screenshots
+- added authenticated `GET /api/v1/activity` and `GET /api/v1/overview` endpoints
+- projected Activity from durable PostgreSQL-backed product records without introducing synthetic events
+- implemented stable reverse-keyset ordering, opaque filter-bound cursors, bounded results, and page-level authorization rechecks
+- assembled bounded Overview sections for recent Spaces, active document or Agent work, and recent Activity
+- added an isolated Phase 10A PostgreSQL smoke gate to continuous integration
 
-**Acceptance criteria**
+### Phase 10B — Global Overview and Activity Experience — Completed
 
-- The demonstration can trace create Space → collaborate → discover a real paper → save/import → index → cited answer → real Agent trace.
-- No fake fallback paper, random metric, timer-completed task, or uncited grounded answer exists.
-- Documentation clearly distinguishes implemented, planned, and excluded capabilities.
+- added global `/overview` and `/activity` routes to the authenticated shell
+- redirected authenticated entry and default login/register continuation to Overview
+- added Overview and Activity to primary navigation
+- implemented URL-backed Activity category and Space filters with durable cursor pagination
+- added responsive, accessible loading, empty, error, filtering, and event presentation
+
+### Phase 10C — Paper Comparison Backend — Completed
+
+- added `POST /api/v1/spaces/:spaceId/paper-comparisons`
+- required current Space membership and two to four unique Saved Papers from that Space
+- restricted generation evidence to stored arXiv metadata and abstracts
+- added bounded provider behavior, strict response validation, safe error mapping, rate limiting, and post-generation authorization revalidation
+- kept comparison results unpersisted, with no history, comparison ID, schema change, migration, or Agent tool
+
+### Phase 10D — Paper Comparison UX — Completed
+
+- added `/spaces/:spaceId/saved-papers/compare` from the Saved Papers workflow
+- implemented native checkbox selection for two to four papers and repeated `paper` URL parameters
+- added canonicalization, deduplication, unavailable-paper cleanup, Back/Forward behavior, and refresh restoration of selection only
+- kept submission explicit and non-retrying with pending locks and Space-plus-selection mutation ownership
+- presented responsive, accessible, local-only comparison results that are not restored or persisted
+
+**Acceptance criteria met**
+
+- Global Overview and Activity expose only authorized, query-derived durable state.
+- Activity pagination remains stable and rechecks access at each page boundary.
+- Paper comparison never implies PDF, full-text, or indexed-document evidence.
+- Refresh restores comparison selection without restoring a result or issuing an automatic request.
+- Documentation distinguishes the completed Phase 10A–10D product scope from planned post-release validation and portfolio work.
+
+## Post-Phase-10 Repository Closure and Portfolio Validation — Planned
+
+This unnumbered work follows the `v0.10.0` product baseline and is not part of the completed Phase 10A–10D implementation:
+
+1. **Final Repository Audit** — perform whole-repository authorization, CSRF, WebSocket Origin, upload, external-integration, retrieval, Agent-tool-boundary, accessibility, responsive-layout, and error-state review.
+2. **Clean-machine Reproducibility Check** — verify setup, migrations, services, provider configuration, tests, builds, and production start from a clean environment.
+3. **Portfolio Polish** — refine accurate setup guidance, limitations, screenshots, and a concise traceable-product demo script.
+4. **Optional Demo / Deployment** — deploy only with explicit runtime, secret, storage, database, and operational boundaries.
+5. **Resume / Interview Packaging** — prepare concise architecture, tradeoff, evidence, and validation narratives.
+6. **Feature Freeze / Maintenance** — prioritize defects, dependency maintenance, and evidence-backed quality work over unplanned features.
+
+Browser end-to-end coverage across collaboration, discovery, ingestion, grounded Knowledge, and Agent workflows; formal performance budgets; and retrieval/groundedness evaluation remain planned within this post-release sequence.
 
 ## Implementation order at a glance
 
@@ -254,7 +292,6 @@ Architecture & Product Definition ✓
 → Product UX Refinement & Accessibility ✓
 → Release Alignment & Automated Gates ✓
 → Tool-Calling Agent & Execution Trace ✓
-→ Integration, Evaluation & Portfolio Polish (next)
+→ Product Integration Experience (Phase 10A–10D) ✓
+→ Post-Phase-10 Repository Closure and Portfolio Validation (planned, unnumbered)
 ```
-
-Do not add Activity or comparison presentation until their durable service boundaries exist in Phase 10.
