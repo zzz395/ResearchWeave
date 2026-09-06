@@ -24,6 +24,8 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
+          { path: "/overview", lazy: () => import("../features/overview/pages/overview-page") },
+          { path: "/activity", lazy: () => import("../features/activity/pages/activity-page") },
           { path: "/research", lazy: () => import("../features/research/pages/research-page") },
           {
             path: "/research/papers/:paperId",
