@@ -2,6 +2,38 @@
 
 All notable changes to ResearchWeave are documented in this file.
 
+## [0.10.0] - 2026-09-06
+
+Phase 10 product integration is complete through Phase 10A–10D. The release adds durable global workspace read models and an evidence-bounded Saved Paper comparison workflow while keeping post-release audit, reproducibility, and portfolio work explicit.
+
+### Added
+
+- Durable authenticated Overview and Activity read models projected from PostgreSQL-backed product records.
+- A global Overview and unified Activity experience with URL-backed category and Space filters.
+- A Space-authorized comparison service for two to four unique current-Space Saved Papers using stored arXiv metadata and abstracts.
+- A Space-scoped Paper Comparison interface with URL-restored selection and local, ephemeral results.
+- Phase 10A PostgreSQL read-model acceptance as a required continuous-integration gate.
+
+### Changed
+
+- Authenticated entry, login continuation, registration continuation, and primary navigation now incorporate Overview and Activity.
+- Saved Papers now provides the explicit entry to the Space-scoped comparison workflow.
+- Public documentation and package metadata are aligned with the capabilities delivered through Phase 10A–10D.
+
+### Runtime impact
+
+- Added `GET /api/v1/activity`, `GET /api/v1/overview`, and `POST /api/v1/spaces/:spaceId/paper-comparisons`.
+- Activity pagination uses stable reverse-keyset ordering with opaque filter-bound cursors and page-level authorization checks.
+- Paper comparison requires current Space membership and two to four unique Saved Papers from that Space.
+- Comparison evidence is limited to stored arXiv metadata and abstracts; generated frontend results are local and are not persisted as history or comparison IDs.
+- Phase 10 comparison adds no database migration and no Agent tool.
+
+### Validation
+
+- Lint, typecheck, automated tests, production build, and Git diff checks pass for the release-closure baseline.
+- GitHub CI includes isolated PostgreSQL gates for Phase 6, Phase 7A, Phase 9, and Phase 10A.
+- Browser end-to-end validation, whole-repository security audit, clean-machine reproduction, and formal performance or retrieval evaluation remain post-release work.
+
 ## [0.9.0] - 2026-09-05
 
 Phase 9 implementation, including Phase 9C-7, is complete. Final checkpoint validation passed, release closure is complete, and the baseline is established as `v0.9.0`.

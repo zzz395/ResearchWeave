@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This document records both the **implemented Phase 9 route surface** and the planned expanded navigation model. The implemented tables are descriptive of the current router; the planned tables are specifications only and do not imply that a route or feature exists.
+This document records the **implemented Phase 10 route surface** and separately identifies unimplemented navigation concepts. The implemented tables are descriptive of the current router; future references do not imply that a route or feature exists.
 
 The route model follows the approved product boundary: Research Space is the collaboration scope; Paper Detail and Execution Trace are detail routes; Chat, Saved Papers, Knowledge, and Members operate in a selected Space; external Research metadata and imported Knowledge remain distinct.
 
@@ -10,13 +10,15 @@ The route model follows the approved product boundary: Research Space is the col
 
 ResearchWeave has one stable primary navigation: the authenticated application sidebar. It answers “which product area am I in?” Contextual tabs answer “which view of this resource am I using?” Breadcrumbs answer “how did this resource inherit its context?” Detail routes are reached from content and never become permanent sidebar items.
 
-### Implemented Phase 9 navigation
+### Implemented Phase 10 navigation
 
 ```text
 ResearchWeave
 ├─ Discover
 │  └─ Research
 └─ Workspace
+   ├─ Overview
+   ├─ Activity
    ├─ Spaces
    ├─ Agents
    └─ Connections
@@ -30,25 +32,17 @@ Selected Research Space
 └─ Settings                     (owner only)
 ```
 
-Research is global discovery. Saved Papers and Knowledge are Space-scoped so that authorization and collaboration context remain explicit. Paper Detail is reached from Research results; it is not a permanent sidebar destination.
+Research is global discovery. Overview and Activity are global authenticated destinations backed by authorization-aware durable read models. Saved Papers and Knowledge are Space-scoped so that authorization and collaboration context remain explicit. Paper Detail is reached from Research results, and Paper Comparison is reached from a selected Space's Saved Papers; neither is a permanent sidebar destination.
 
-### Planned expanded primary sidebar
+### Unimplemented navigation reference
 
 ```text
-ResearchWeave
-├─ Overview
-├─ Collaborate
-│  ├─ Research Spaces
-│  └─ Connections
-├─ Work
-│  ├─ Knowledge
-│  ├─ Research
-│  └─ Agents
-├─ Activity
-└─ Settings                     (sidebar footer)
+Potential future additions
+├─ Global Knowledge
+└─ User Settings
 ```
 
-`Collaborate` and `Work` are visual group labels, not clickable destinations. This keeps the sidebar stable and avoids a redundant landing page for every noun.
+These destinations are not present in the current router or sidebar. They remain design references only and must not appear until their real route and behavior exist.
 
 The following are deliberately not primary navigation items:
 
@@ -59,32 +53,34 @@ The following are deliberately not primary navigation items:
 - Logout: an account action inside the user menu.
 - Search, notifications, command menu, presence, and workspace switcher: absent until a real cross-product behavior exists.
 
-### Planned secondary and contextual navigation
+### Secondary and contextual navigation
 
 | Context | Navigation |
 |---|---|
 | Research Space | `Overview`, `Saved Papers`, `Knowledge`, `Chat`, `Members`, and owner-only `Settings` tabs. The space name and role remain above the tabs. |
 | Knowledge | `Documents`, `Knowledge Bases` section tabs. `Ask` is an action/detail route tied to one knowledge base. |
-| Research | `Search`, `Saved Papers`; comparison is launched from selection and opens a route. |
+| Research | Global Research provides search and Paper Detail. Saved Papers remain inside a selected Space; comparison starts from that Space's Saved Papers and opens `/spaces/:spaceId/saved-papers/compare`. |
 | Agents | `Agents`, `Tasks`; Agent Detail and Run Trace are reached from records. |
 | Settings | `Profile`, `Preferences` only when both are real; no provider/API-key page. |
 
 Tabs use URL routes when a view should survive refresh or be shareable. Local tabs are reserved for presentational subdivisions that do not change the data boundary.
 
-## Implemented route map — Phase 9
+## Implemented route map — Phase 10
 
 ### Entry and public routes
 
 | Route | Access | Purpose |
 |---|---|---|
-| `/` | Public resolver | Authenticated users redirect to `/spaces`; unauthenticated users redirect to `/login`. |
-| `/login` | Anonymous-only | Sign in and restore a validated internal return path. |
-| `/register` | Anonymous-only | Create an account, then open `/spaces`. |
+| `/` | Public resolver | Authenticated users redirect to `/overview`; unauthenticated users redirect to `/login`. |
+| `/login` | Anonymous-only | Sign in and restore a validated internal return path, defaulting to `/overview`. |
+| `/register` | Anonymous-only | Create an account, then open `/overview`. |
 
 ### Authenticated routes
 
 | Route | Navigation role | Purpose |
 |---|---|---|
+| `/overview` | Primary | Bounded recent Spaces, active work, and recent Activity from the authenticated Overview read model. |
+| `/activity` | Primary | Authorized unified Activity with URL-backed category and Space filters and backend cursor pagination. |
 | `/research` | Primary | Real arXiv paper search with URL-backed query, page, and sort state. |
 | `/research/papers/:paperId` | Detail | Persisted paper metadata, abstract evidence, source links, summary, and explicit Save-to-Space workflow. |
 | `/agents` | Primary | System-managed Agent definitions, purpose, approved tools, limits, and runtime availability. |
@@ -95,61 +91,16 @@ Tabs use URL routes when a view should survive refresh or be shareable. Local ta
 | `/spaces/new` | Workflow | Create a Research Space. |
 | `/spaces/:spaceId` | Space default | Space overview and truthful continuation actions derived from current resources. |
 | `/spaces/:spaceId/saved-papers` | Space tab | Membership-authorized Saved Papers for this Space. |
+| `/spaces/:spaceId/saved-papers/compare` | Space workflow | Compare two to four current-Space Saved Papers using stored metadata and abstracts; repeated `paper` parameters preserve selection, not results. |
 | `/spaces/:spaceId/knowledge` | Space tab | Document upload, indexing state, retrieval, and grounded questions for this Space. |
 | `/spaces/:spaceId/chat` | Space tab | Durable chat with authenticated realtime deltas. |
 | `/spaces/:spaceId/members` | Space tab | Current membership and admission/removal workflows. |
 | `/spaces/:spaceId/settings` | Owner-only Space tab | Rename and lifecycle controls. |
 | `/connections` | Primary | Connection requests and accepted connections. |
 
-Any route not listed above is absent from the current router. In particular, Overview as a global destination, Activity, Knowledge Bases, standalone document detail, paper comparison, and user Settings remain planned. Agent state refreshes through durable REST polling; no Agent-specific WebSocket route or protocol exists.
+Any route not listed above is absent from the current router. Global Knowledge, Knowledge Bases, standalone document detail, Agent definition detail, and user Settings remain unimplemented. Agent state refreshes through durable REST polling; no Agent-specific WebSocket route or protocol exists.
 
-## Planned canonical route map
-
-### Entry and public routes
-
-| Route | Access | Purpose |
-|---|---|---|
-| `/` | Public resolver | Authenticated users redirect to `/overview`; unauthenticated users redirect to `/login`. It is not a second dashboard. |
-| `/login` | Anonymous-only | Sign in. Authenticated users redirect to their validated return path or `/overview`. |
-| `/register` | Anonymous-only | Create an account. Authenticated users redirect to `/overview`. |
-
-### Authenticated routes
-
-| Route | Navigation role | Purpose |
-|---|---|---|
-| `/overview` | Primary | Real cross-domain recency/status summary; may remain minimal until sufficient data exists. |
-| `/spaces` | Primary | Research Space list. |
-| `/spaces/new` | Workflow | Create a Research Space. A route is preferred over a modal for deep-link/back behavior. |
-| `/spaces/:spaceId` | Detail + default tab | Space overview and linked real resources. |
-| `/spaces/:spaceId/chat` | Space tab | Durable chat in this space. |
-| `/spaces/:spaceId/members` | Space tab | Membership and invitations. |
-| `/spaces/:spaceId/settings` | Space tab | Rename and owner-only lifecycle controls. |
-| `/connections` | Primary | Connection requests and accepted connections. |
-| `/knowledge` | Section resolver | Redirect to `/knowledge/documents` while preserving valid scope query parameters. |
-| `/knowledge/documents` | Secondary | Authorized document list across or within an explicit space filter. |
-| `/knowledge/documents/:documentId` | Detail | Document metadata, lifecycle, source availability, retry/reindex/delete. |
-| `/knowledge/bases` | Secondary | Knowledge Base list. |
-| `/knowledge/bases/:knowledgeBaseId` | Detail | Knowledge Base documents and retrieval scope. |
-| `/knowledge/bases/:knowledgeBaseId/ask` | Workflow/detail | Grounded question flow scoped to the selected base. |
-| `/research` | Primary + default | Real paper search. |
-| `/research/saved` | Secondary | Saved papers, explicitly scoped/filterable by Research Space. |
-| `/research/papers/:paperId` | Detail | Real paper metadata, abstract, source links, save/import state. |
-| `/research/compare` | Workflow | Compare selected paper/evidence records; selected IDs live in validated query parameters. |
-| `/agents` | Primary + default | Agent definitions and purpose/allowlist summaries. |
-| `/agents/:agentId` | Detail | One agent definition and real recent runs. |
-| `/agents/tasks` | Secondary | Durable task list. |
-| `/agents/tasks/:taskId` | Detail | Task request, status, result, and attempts. |
-| `/agents/runs/:runId` | Detail | Observable execution trace. |
-| `/activity` | Primary | Authorized real activity feed. |
-| `/settings` | Primary utility | Profile and harmless preferences; redirect to the first implemented subsection only if subsections exist. |
-| `/settings/profile` | Secondary, later | Profile details. |
-| `/settings/preferences` | Secondary, later | Harmless UI preferences. Do not expose provider credentials/endpoints. |
-
-### Why resource IDs are not always nested under spaces
-
-Space-owned resources remain authorized by Research Space even when their detail URL is shorter. A stable document, knowledge base, paper cache record, task, or run ID can resolve its parent context server-side, then render `Space → Area → Resource` in the breadcrumb. This avoids deeply nested URLs while preserving the actual authorization boundary. Lists and create actions must still make the active space/filter explicit.
-
-## Planned route hierarchy
+## Implemented route hierarchy
 
 ```mermaid
 flowchart TD
@@ -157,31 +108,26 @@ flowchart TD
     Root --> Register["/register"]
     Root --> App["Authenticated shell"]
     App --> Overview["/overview"]
+    App --> Activity["/activity"]
     App --> Spaces["/spaces"]
     Spaces --> SpaceNew["/spaces/new"]
     Spaces --> Space["/spaces/:spaceId"]
+    Space --> SavedPapers["saved-papers"]
+    SavedPapers --> Compare["compare"]
+    Space --> Knowledge["knowledge"]
     Space --> Chat["chat"]
     Space --> Members["members"]
     Space --> SpaceSettings["settings"]
     App --> Connections["/connections"]
-    App --> Knowledge["/knowledge"]
-    Knowledge --> Documents["documents"]
-    Knowledge --> Bases["bases"]
-    Documents --> DocumentDetail[":documentId"]
-    Bases --> BaseDetail[":knowledgeBaseId"]
-    BaseDetail --> Ask["ask"]
     App --> Research["/research"]
-    Research --> Saved["saved"]
     Research --> Paper["papers/:paperId"]
-    Research --> Compare["compare"]
     App --> Agents["/agents"]
-    Agents --> Agent[":agentId"]
     Agents --> Tasks["tasks"]
     Tasks --> Task[":taskId"]
     Agents --> Run["runs/:runId"]
-    App --> Activity["/activity"]
-    App --> Settings["/settings"]
 ```
+
+Potential global Knowledge, Knowledge Base, standalone document detail, Agent definition detail, and user Settings routes remain future design work. They are not part of the implemented hierarchy above.
 
 ## Authentication and route guards
 

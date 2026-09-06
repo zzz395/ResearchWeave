@@ -4,18 +4,19 @@
 
 This document records implemented screen behavior and future screens at implementation-ready detail. Routes follow [Navigation and routes](navigation-and-routes.md); layout, state, and accessibility rules follow the [UI/UX specification](ui-ux-spec.md); visual values and primitives follow the [Design system](design-system.md).
 
-Authentication, Research Spaces, Connections, Members, and Chat use real Phase 4 data. Later screens described below may display a field only after its API contract supplies a real value. “Not available yet” is preferable to an invented count, timestamp, progress value, status, or result.
+Screens delivered through Phase 10 use real application data and explicit authorization boundaries. Future screens described below may display a field only after its API contract supplies a real value. “Not available yet” is preferable to an invented count, timestamp, progress value, status, or result.
 
 ## Delivery priority
 
 | Wave | Screens | Rationale |
 |---|---|---|
 | `MVP-1: identity and space boundary` | Login, Register, Research Spaces List, Create Research Space, Research Space Detail shell | First real product UI; establishes session, authorization context, and reusable shell. |
-| `MVP-2: collaboration` | Connections, Space Chat/Members views within Space Detail, Activity | Completes the real multi-user space workflow after identity and persistence. |
-| `Later-1: academic discovery` | Research Search, Paper Detail, Paper Comparison | Requires trustworthy arXiv and explicit evidence-scope services. |
+| `MVP-2: collaboration` | Connections, Space Chat/Members views within Space Detail | Completes the real multi-user space workflow after identity and persistence. |
+| `Delivered Phase 5: academic discovery` | Research Search and Paper Detail | Uses trustworthy arXiv metadata and an explicit abstract evidence boundary. |
 | `Later-2: knowledge` | Knowledge Documents, Knowledge Base Detail, Ask Knowledge | Requires real upload, parsing, indexing, retrieval, and citations. |
 | `Delivered Phase 9: agents` | Agents, Agent Tasks, Agent Execution Trace | Uses real Research/Knowledge tools and durable bounded execution. |
-| `Later polish` | Overview and expanded Settings | Overview waits for meaningful real cross-domain data; Settings stays minimal. |
+| `Delivered Phase 10: product integration` | Overview, Activity, Paper Comparison | Uses durable authorized read models and an abstract-scoped comparison service. |
+| `Future` | Expanded Settings and other explicitly unimplemented screens | Remains absent until real routes, contracts, and behavior exist. |
 
 Screens from later waves must not appear as empty navigation destinations during MVP-1. Add a route only when its implementation phase begins.
 
@@ -144,18 +145,18 @@ Do not show everyone as online or attach a fixed port/status. Connection state a
 
 ## 7. Overview
 
-**Route / priority:** `/overview` · `Later polish`
+**Route / priority:** `/overview` · delivered in Phase 10B
 
 | Requirement | Specification |
 |---|---|
 | Purpose | Provide a concise starting point assembled from real user-relevant records across implemented domains. |
-| Primary action | None globally; contextual `Create space` is allowed when the user has no spaces. |
-| Secondary actions | Open recent space, document/job, saved paper, task, or activity record. |
-| Information hierarchy | Greeting/page title → actionable real statuses → recent spaces/work → recent activity. |
-| Main components | PageHeader, compact lists, StatusBadge, EmptyState, ErrorState. Charts are not an initial requirement. |
-| Empty state | Explain that activity appears as the user creates and uses spaces; provide Create Space. No sample metrics. |
-| Loading state | Independent section skeletons to avoid blocking the whole page. |
-| Error state | Each domain section fails independently and names its boundary; successful sections remain visible. |
+| Primary action | `View all activity`. |
+| Secondary actions | Open a recent Space, active Document or Agent Run, or the full Activity feed. |
+| Information hierarchy | Page title and Activity action → recent Spaces and active work → recent Activity. |
+| Main components | PageHeader, SectionHeader, compact linked lists, ActivityEventList, EmptyState, PageLoading, and ErrorPanel. Charts are not used. |
+| Empty state | Each bounded section truthfully reports that no recent Space activity, active work, or recent workspace Activity exists. No sample metrics. |
+| Loading state | Page-level loading state while the single bounded Overview response resolves. |
+| Error state | Page-level error with Retry and request ID when available. |
 | Responsive behavior | Desktop may use a 2-column asymmetric grid; mobile uses priority-ordered sections. No data-dense tile shrinks below readable width. |
 
 Only measured/query-derived values may appear. No random latency, throughput, uptime, security score, achievement, or synthetic trend.
@@ -216,31 +217,31 @@ Every displayed citation must correspond to an authorized chunk actually supplie
 
 ## 11. Research Search
 
-**Route / priority:** `/research` · `Later-1`
+**Route / priority:** `/research` · delivered in Phase 5
 
 | Requirement | Specification |
 |---|---|
 | Purpose | Search real academic metadata and move selected papers into a durable ResearchWeave workflow. |
 | Primary action | `Search papers`. |
-| Secondary actions | Open paper, save to a chosen space, select for comparison. |
+| Secondary actions | Open Paper Detail and save a paper to a chosen Space. |
 | Information hierarchy | Search title and field → query/status → result count only from response → result list with title, authors, date, abstract excerpt, arXiv identity/source → pagination. |
-| Main components | PageHeader, SearchInput/Form, filter controls only if supported, result list, Checkbox for compare mode, EmptyState, Pagination, Alert. |
+| Main components | PageHeader, SearchInput/Form, filter controls only if supported, result list, Save Paper dialog, EmptyState, Pagination, Alert. |
 | Empty state | Before search, prompt for a research topic. A successful zero-result search states `No papers found` and suggests changing the query. |
 | Loading state | Preserve submitted query and prior results during background refetch; initial search uses result-row skeletons. |
 | Error state | arXiv/upstream failure is an error with Retry and no fallback papers. Rate limit/timeout messages are distinct when server provides safe codes. |
-| Responsive behavior | Results become single-column reading rows. Compare selection uses a non-obscuring sticky action bar only after selection. |
+| Responsive behavior | Results remain readable as single-column rows, with paper actions wrapping without obscuring content. |
 
 Search never displays fabricated papers, cached records without verifiable source metadata, or automatic “AI summaries” before the user requests one.
 
 ## 12. Paper Detail
 
-**Route / priority:** `/research/papers/:paperId` · `Later-1`
+**Route / priority:** `/research/papers/:paperId` · delivered in Phase 5
 
 | Requirement | Specification |
 |---|---|
 | Purpose | Inspect real paper metadata/abstract, source attribution, saved/import state, and permitted evidence-scoped actions. |
 | Primary action | Context-dependent `Save to space`; after saved, `Import PDF to knowledge` only when the real workflow exists. |
-| Secondary actions | Open canonical arXiv/PDF link, request Abstract-based Summary, add to comparison. |
+| Secondary actions | Open canonical arXiv/PDF links and request an Abstract-based Summary. |
 | Information hierarchy | Research breadcrumb → title → authors and canonical identifiers/dates → source attribution and links → action/status row → abstract → explicitly labelled summary if requested. |
 | Main components | PageHeader, metadata definition list, Source links, EvidenceScopeBadge, reading typography, status Alerts, Dialog for space/base selection. |
 | Empty state | Missing optional metadata is labelled unavailable. Summary area is absent until requested; it is not filled with placeholder prose. |
@@ -252,21 +253,25 @@ Use the exact heading `Abstract-based Summary`. Full-document actions remain una
 
 ## 13. Paper Comparison
 
-**Route / priority:** `/research/compare` · `Later-1`, grounded comparison expands in `Later-2`
+**Route / priority:** `/spaces/:spaceId/saved-papers/compare` · delivered in Phase 10D
+
+Paper comparison is entered from Saved Papers within the current Space. It is a Space-scoped workflow at `/spaces/:spaceId/saved-papers/compare`, not a global Research destination, Paper Detail action, or Space primary tab.
 
 | Requirement | Specification |
 |---|---|
-| Purpose | Compare two to four selected papers using only the evidence actually available. |
-| Primary action | `Compare selected papers` when generation is a real requested operation; otherwise the comparison view itself is the result. |
-| Secondary actions | Add/remove paper, open detail/source, save comparison if persistence exists. |
-| Information hierarchy | Comparison scope label → selected papers → aligned dimensions such as title/authors/date/problem/method claims available from evidence → citations/source boundary → result. |
-| Main components | PageHeader, selection control, EvidenceScopeBadge, semantic comparison Table, source links, EmptyState, Alert. |
-| Empty state | Fewer than two selected papers prompts selection and links back to Search/Saved. No default comparison set. |
-| Loading state | Preserve selected paper headers; skeleton comparison rows or show durable run status for generated comparison. |
-| Error state | Identify which paper/source failed. Partial metadata may remain visible; generated comparison must not claim completion when evidence failed. |
-| Responsive behavior | Provide stacked single-paper sections by dimension, with an optional clearly signposted horizontal comparison region. Do not compress four columns into unreadable cards. |
+| Purpose | Compare two to four unique Saved Papers from the current Space using stored arXiv metadata and abstracts only. |
+| Primary action | `Compare selected papers`; generation occurs only after explicit submission. |
+| Secondary actions | Select or deselect papers, return to Saved Papers, open an arXiv abstract record, refresh an unavailable selection, or explicitly retry eligible failures. |
+| Information hierarchy | Abstract evidence boundary → native checkbox selection → pending state → ephemeral result with paper identity, overview, similarities, and aligned dimensions. |
+| Main components | Page header, native checkbox fieldset, selection count and submit action, status/error regions, semantic comparison table, compact dimension layout, and source links. |
+| Empty state | No Saved Papers links to Research; one Saved Paper explains that one more must be saved. No default comparison set exists. |
+| Loading state | Saved Papers use page loading; an explicit comparison request locks selection and submission and shows an announced pending region. |
+| Error state | Safe page, selection, or result errors expose only supported recovery actions and request IDs. Unavailable identifiers are removed without revealing why. |
+| Responsive behavior | Wide screens use the semantic comparison table; compact screens present dimensions as labelled per-paper definition lists. Selection and results remain readable without horizontal compression. |
 
-`Abstract-based comparison` and `Full-document grounded comparison` are separate labels and contracts. Mixed evidence must describe each source boundary rather than choosing the stronger label globally.
+Selection is represented by repeated, validated `paper` query parameters. Canonicalization removes malformed, duplicate, excess, stale, or unavailable identifiers. Back and Forward restore selection. Refresh restores selection only: it does not restore a comparison result or issue an automatic POST. Submitted Space and paper IDs own the pending, error, and result state so stale work is not displayed after navigation.
+
+The generated result is local and ephemeral. It has no persistence, history, or comparison ID. Full-document, PDF, indexed-document, and mixed-evidence comparison are not shipped in `v0.10.0` and remain possible future capabilities only behind separate explicit contracts.
 
 ## 14. Agents
 
@@ -324,21 +329,21 @@ Allowed trace fields: tool, safe input summary, execution status, observation su
 
 ## 17. Activity
 
-**Route / priority:** `/activity` · basic screen in `MVP-2`, grows with real domains
+**Route / priority:** `/activity` · delivered in Phase 10B
 
 | Requirement | Specification |
 |---|---|
 | Purpose | Show authorized, durable product events across implemented domains. |
 | Primary action | None. Activity is inspection, not a dashboard action surface. |
-| Secondary actions | Filter by real event type/status/space; open linked entity; load older events. |
+| Secondary actions | Filter by allowlisted category and authorized Space, clear filters, open linked entities, and load older events. |
 | Information hierarchy | Page title → filters → reverse-chronological events with type, actor when allowed, subject, status, exact/relative timestamp, entity link. |
-| Main components | PageHeader, filter controls, activity list, StatusBadge, Avatar when real, Pagination/load-more, EmptyState. |
+| Main components | Page header, native category and Space selects, Activity event list, Load more action, EmptyState, QueryState, and ErrorPanel. |
 | Empty state | Explain that important actions and system work will appear after they occur. No seeded security or system events. |
-| Loading state | Event-row skeletons. Loading older events appends without moving focus unexpectedly. |
-| Error state | Feed failure offers Retry. A linked resource that was deleted/inaccessible is labelled unavailable without leaking content. |
-| Responsive behavior | Events become stacked rows; timestamp stays readable; filters use a sheet; entity link remains a real link. |
+| Loading state | Initial query and incremental cursor loading have separate announced states; existing events remain visible while loading more. |
+| Error state | Initial and next-page failures have bounded Retry actions. An unavailable filtered Space can be cleared without exposing inaccessible content. Space-option failure does not block Activity. |
+| Responsive behavior | Filters and event rows adapt without introducing a separate mobile navigation model; timestamps and entity links remain readable and operable. |
 
-Product Activity is not debug logging or a security marketing surface. It must not expose raw payloads, secrets, document contents, or fake throughput.
+Category and Space filters are canonical URL state; cursor tokens remain backend/query-cache pagination state. Product Activity is not debug logging or a security marketing surface. It must not expose raw payloads, secrets, document contents, or fake throughput.
 
 ## 18. Settings
 

@@ -155,13 +155,13 @@ IDs should be UUID/ULID-style stable identifiers; timestamps are stored in UTC. 
 | `citations` | id, query_id or agent_run_id, chunk_id, rank, score, quoted_excerpt, locator | Traceable answer-to-source link. Excerpt is bounded and derived from source. |
 | `papers` | id, arxiv_id, version, title, abstract, authors_json, published_at, updated_at, canonical_url, pdf_url | Cached real arXiv metadata with unique arXiv ID/version. |
 | `saved_papers` | paper_id, space_id, saved_by, saved_at | Space reading list. |
-| `paper_comparisons` | id, space_id, created_by, scope, result, created_at | Saved comparison with explicit evidence scope. |
 | `agent_definitions` | id, space_id/null, name, purpose, enabled, limits_json | User-visible agent purpose and execution limits. |
 | `agent_definition_tools` | agent_id, tool_name | Allowlisted tools; no executable user code. |
 | `agent_tasks` | id, space_id, agent_id, created_by, prompt, status, final_result, error_code | Durable requested task. |
 | `agent_runs` | id, task_id, attempt, status, model, started/finished_at, step_count | One execution attempt. |
 | `agent_run_steps` | id, run_id, sequence, kind, tool_name, safe_input_json, observation_json, status, duration_ms | Operational trace: model/tool decisions, calls, observations, errors—not hidden chain-of-thought. |
-| `activity_events` | id, space_id/null, actor_id/null, type, subject_type/id, safe_metadata_json, created_at | Unified product activity. |
+
+The `v0.10.0` Activity and Overview services project authorized read models from existing durable product records; they do not add an `activity_events` table. Paper Comparison is request-scoped and ephemeral, so there is no `paper_comparisons` table, comparison history, or comparison ID.
 
 ### Data invariants
 
@@ -195,10 +195,11 @@ Use `/api/v1`. Schemas live in shared contracts where safe, and responses use re
 | Documents | `POST /spaces/:id/documents`, `GET /documents/:id`, `DELETE /documents/:id`, `POST /documents/:id/reindex` | Upload metadata/lifecycle, safe delete/reindex. |
 | Knowledge bases | `GET/POST /spaces/:id/knowledge-bases`, `PATCH/DELETE /knowledge-bases/:id`, `PUT/DELETE /knowledge-bases/:id/documents/:documentId` | Retrieval scopes. |
 | Knowledge query | `POST /knowledge-bases/:id/queries`, `GET /knowledge-queries/:id` | Grounded answer and citations. |
-| Research | `GET /research/arxiv/papers?q=...`, `GET /research/papers/:id`, `POST /spaces/:id/saved-papers`, `POST /research/comparisons` | Real metadata search, save, and explicit-scope compare. |
+| Research | `GET /research/papers/search`, `GET /research/papers/:id`, Space-scoped Saved Paper endpoints, `POST /api/v1/spaces/:spaceId/paper-comparisons` | Real arXiv metadata search, Saved Papers, and explicit abstract-based comparison. |
 | Summary | `POST /research/papers/:id/abstract-summary` | Clearly labelled abstract-only generation. |
 | Agents | `GET/POST /spaces/:id/agents`, `GET/PATCH /agents/:id`, `POST /agents/:id/tasks`, `GET /agent-tasks/:id`, `GET /agent-runs/:id/steps` | Definitions, tasks, status, and trace. |
-| Activity | `GET /spaces/:id/activity?cursor=...`, `GET /activity?cursor=...` | Authorized, cursor-paginated events. |
+| Overview | `GET /api/v1/overview` | Bounded authorized recent Spaces, active work, and recent Activity. |
+| Activity | `GET /api/v1/activity?cursor=...&category=...&spaceId=...` | Authorized durable projection with stable reverse-keyset pagination and optional filters. |
 
 File upload accepts only PDF, Markdown, and TXT in the initial release. Enforce extension, MIME sniffing, maximum size, checksum, and safe generated storage key. Filenames never determine storage paths.
 
@@ -286,10 +287,9 @@ Initial tool mapping:
 |---|---|---|
 | `search_arxiv` | `ResearchService.searchArxiv` | Real paper metadata or typed upstream failure. |
 | `search_knowledge_base` | `RetrievalService.retrieve` | Ranked authorized chunks with locators. |
-| `summarize_document` | `DocumentService` + `RetrievalService` + `LlmService` | Grounded summary only for a ready indexed document, with citations. |
-| `compare_papers` | `PaperComparisonService` | Comparison with explicit abstract/full-document evidence scope. |
+| `ask_knowledge` | `GroundedAnswerService` | Grounded answer with server-validated citations from authorized indexed evidence. |
 
-Tools do not query tables directly and do not duplicate arXiv/RAG/comparison logic. The registry uses fixed server-defined schemas. A run has hard maximum steps, wall-clock timeout, token budget, per-tool timeout, cancellation, and retry rules. Status is durable (`queued`, `running`, `completed`, `failed`, `cancelled`). No timer may mark work complete.
+Tools do not query tables directly and do not duplicate arXiv or Knowledge business logic. The registry uses fixed server-defined schemas. A run has hard maximum steps, wall-clock timeout, token budget, per-tool timeout, cancellation, and retry rules. Status is durable (`queued`, `running`, `completed`, `failed`, `cancelled`). No timer may mark work complete. Paper Comparison is not part of the Agent tool registry in `v0.10.0`.
 
 The Execution Trace stores operational evidence: selected tool, validated/redacted arguments, observation summary, citations, error, duration, and status. It must not expose hidden chain-of-thought or secrets.
 
@@ -301,6 +301,7 @@ The Execution Trace stores operational evidence: selected tool, validated/redact
 - Empty real results return an empty list, not fallback papers.
 - Cache only successfully sourced metadata with retrieval timestamp.
 - `abstract-summary` sends title/authors/abstract and is labelled **Abstract-based Summary**.
+- Paper Comparison sends only stored arXiv metadata and abstracts for two to four current-Space Saved Papers; it does not use PDFs, full text, or indexed Knowledge chunks.
 - Full-document grounded analysis requires a successfully imported/indexed PDF and citations.
 
 ## Error handling and observability

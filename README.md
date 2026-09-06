@@ -6,9 +6,9 @@ ResearchWeave is a TypeScript research workspace for small teams. It combines se
 
 ## Current status
 
-ResearchWeave has completed **Phase 9 — Tool-Calling Agent & Execution Trace**, including the Phase 9C-7 Agent UI and navigation, and the Phase 9 baseline is released as `v0.9.0`. **Phase 10 — Integration, Evaluation & Portfolio Polish** is the next planned product phase and has not started.
+ResearchWeave has completed **Phase 10 — Product Integration Experience** through Phase 10A–10D, and the release baseline is `v0.10.0`. The delivered Phase 10 scope adds durable global workspace read models, the Overview and unified Activity experience, and Space-scoped abstract-based Saved Paper comparison. Final repository audit, clean-machine reproducibility, browser end-to-end validation, performance evaluation, portfolio polish, and deployment remain post-release work.
 
-Implemented through Phase 9:
+Implemented through Phase 10:
 
 - secure registration, login, session restoration, protected routes, and logout
 - Research Space creation, membership authorization, owner controls, and connections
@@ -20,10 +20,14 @@ Implemented through Phase 9:
 - system-managed Agent definitions, Space-scoped immutable Tasks, retry Runs, cancellation, and durable execution traces
 - bounded Agent execution through an immutable allowlist of arXiv search, Knowledge retrieval, and grounded-answer tools
 - production Agent Worker readiness, PostgreSQL leases, heartbeats, fencing, recovery, and lifecycle shutdown coordination
+- authorization-aware PostgreSQL-backed Overview and Activity read models, including stable reverse-keyset Activity pagination
+- global Overview summaries and unified Activity with URL-backed category and Space filters
+- comparison of two to four unique current-Space Saved Papers using stored arXiv metadata and abstract evidence
+- a responsive, accessible comparison workflow whose generated result is local, ephemeral, and never assigned a history record or comparison ID
 - responsive desktop, tablet, and mobile navigation with accessible focus, status, error, and realtime-announcement behavior
 - shared Zod contracts, versioned Drizzle migrations, structured errors, Origin checks, rate limits, and automated authorization coverage
 
-Agent definitions, Tasks, Runs, and server-validated evidence are available through the authenticated Agent workspace. Unified Activity, paper comparison, and complete browser end-to-end evaluation remain Phase 10 work.
+Agent definitions, Tasks, Runs, and server-validated evidence are available through the authenticated Agent workspace. Overview and Activity are derived from durable authorized records. Paper comparison remains explicitly abstract-based: it does not compare PDFs, full text, or indexed Knowledge documents, and comparison results are not persisted. Complete browser end-to-end evaluation remains post-release work.
 
 ## Development setup
 
@@ -45,7 +49,7 @@ The Vite client runs at `http://localhost:5173`. The Express API runs at `http:/
 
 ### Optional model-backed capabilities
 
-`LLM_BASE_URL` and `LLM_API_KEY` enable the OpenAI-compatible embedding adapter used for document indexing and semantic retrieval. Adding `LLM_MODEL` also enables abstract-based paper summaries, grounded answer generation, and the production Agent runtime.
+`LLM_BASE_URL` and `LLM_API_KEY` enable the OpenAI-compatible embedding adapter used for document indexing and semantic retrieval. Adding `LLM_MODEL` also enables abstract-based paper summaries, abstract-based paper comparison from stored paper metadata and abstracts, grounded answer generation, and the production Agent runtime.
 
 The Agent runtime is configured only when all three `LLM_*` values are present. With the complete triple, the API starts one Agent Worker after HTTP listening and reports Agent availability only after its initial database claim probe succeeds. With missing or partial configuration, the application still starts, no Agent Worker is constructed, and Agent definitions report `provider_unconfigured`. Agent availability does not change the database-only `/api/v1/health` result.
 
@@ -73,12 +77,22 @@ Semantic retrieval filters all vector queries by current Space membership and co
 
 The application exposes the system Research Agent, Space-scoped task submission, durable Runs, retries, cancellation, and execution traces. The production Worker uses PostgreSQL claims, leases, heartbeats, and fencing; local process shutdown leaves interrupted work recoverable through lease expiry rather than persisting a cancellation or failure. The client presents runtime availability, immutable task history, safe step observations, and server-validated evidence through REST polling.
 
+### Overview and Activity
+
+Overview provides a bounded, authorization-aware summary of recent Spaces, active document or Agent work, and recent Activity. Unified Activity projects durable collaboration, Research, Knowledge, and Agent records with stable reverse-keyset pagination. Category and Space filters are URL-backed and are reauthorized on every page request.
+
+### Paper comparison
+
+Space members can explicitly compare two to four unique Saved Papers from the current Space. The comparison service receives only stored arXiv metadata and abstracts. Selection is restored from repeated `paper` query parameters, while generated results remain local to the current page session and are not persisted as comparison history or IDs.
+
 ## Current application routes
 
 ```text
 /
 /login
 /register
+/overview
+/activity
 /research
 /research/papers/:paperId
 /agents
@@ -90,18 +104,22 @@ The application exposes the system Research Agent, Space-scoped task submission,
 /spaces/:spaceId
 /spaces/:spaceId/chat
 /spaces/:spaceId/saved-papers
+/spaces/:spaceId/saved-papers/compare
 /spaces/:spaceId/knowledge
 /spaces/:spaceId/members
 /spaces/:spaceId/settings
 /connections
 ```
 
-Future destinations such as Activity and paper comparison remain intentionally absent from the runtime router and navigation.
+This list reflects the current runtime router. It does not include unimplemented global Knowledge, Settings, or alternative comparison routes.
 
 ## Versioned APIs
 
 ```text
 GET  /api/v1/health
+
+GET  /api/v1/activity
+GET  /api/v1/overview
 
 POST /api/v1/auth/register
 POST /api/v1/auth/login
@@ -133,6 +151,7 @@ PUT    /api/v1/research/papers/:paperId/summary
 GET    /api/v1/spaces/:spaceId/saved-papers
 PUT    /api/v1/spaces/:spaceId/saved-papers/:paperId
 DELETE /api/v1/spaces/:spaceId/saved-papers/:paperId
+POST   /api/v1/spaces/:spaceId/paper-comparisons
 
 POST   /api/v1/spaces/:spaceId/documents
 GET    /api/v1/spaces/:spaceId/documents
@@ -177,9 +196,12 @@ npm run test:phase7a:postgres
 
 $env:PHASE9_SMOKE_DATABASE_URL = "postgresql://.../phase9_smoke"
 npm run test:phase9:postgres
+
+$env:PHASE10A_SMOKE_DATABASE_URL = "postgresql://.../phase10a_smoke"
+npm run test:phase10a:postgres
 ```
 
-The smoke scripts refuse to use the normal `DATABASE_URL` or a non-empty target. CI provisions isolated databases for all three checks, including the Phase 9 runtime lifecycle gate.
+The smoke scripts refuse to use the normal `DATABASE_URL` or a non-empty target. CI provisions isolated databases for all four checks, including the Phase 9 runtime lifecycle gate and the Phase 10A durable workspace read-model gate.
 
 Database migration commands:
 
