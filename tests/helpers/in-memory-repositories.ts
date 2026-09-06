@@ -267,7 +267,7 @@ export class InMemoryConnectionRepository implements ConnectionRepository {
 }
 
 export class InMemoryMemberRepository implements MemberRepository {
-  private readonly joinedAt = new Map<string, Date>();
+  readonly joinedAt = new Map<string, Date>();
 
   constructor(
     private readonly auth: InMemoryAuthRepository,

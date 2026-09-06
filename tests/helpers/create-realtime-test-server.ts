@@ -4,6 +4,7 @@ import pino from "pino";
 
 import { createApp } from "../../server/app";
 import { createAuthService } from "../../server/modules/auth/service";
+import { createActivityService } from "../../server/modules/activity/service";
 import { createAgentService } from "../../server/modules/agents/service";
 import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
@@ -12,6 +13,7 @@ import { createDocumentService } from "../../server/modules/documents/service";
 import { createGroundedAnswerService } from "../../server/modules/grounded-answer/service";
 import { UnconfiguredDocumentEmbeddingGenerator } from "../../server/modules/documents/document-embedding-generator";
 import { createMemberService } from "../../server/modules/members/service";
+import { createOverviewService } from "../../server/modules/overview/service";
 import { createResearchService } from "../../server/modules/research/service";
 import { createSemanticRetrievalService } from "../../server/modules/retrieval/service";
 import { createSpaceService, type SpaceService } from "../../server/modules/spaces/service";
@@ -32,6 +34,7 @@ import {
   InMemorySpaceRepository,
 } from "./in-memory-repositories";
 import { InMemoryAgentRepository } from "./in-memory-agent-repository";
+import { InMemoryActivityRepository } from "./in-memory-activity-repository";
 
 interface Deferred {
   promise: Promise<void>;
@@ -68,9 +71,23 @@ export async function createRealtimeTestServer() {
   const authService = createAuthService(authRepository, {
     sessionEnded: (tokenHash) => hub.closeSession(tokenHash),
   });
-  const agentService = createAgentService(new InMemoryAgentRepository(spaceRepository), {
+  const agentRepository = new InMemoryAgentRepository(spaceRepository);
+  const agentService = createAgentService(agentRepository, {
     getSnapshot: () => ({ ready: true, providerModel: "test-agent-model" }),
   });
+  const activityRepository = new InMemoryActivityRepository({
+    auth: authRepository,
+    spaces: spaceRepository,
+    connections: connectionRepository,
+    members: memberRepository,
+    chat: chatRepository,
+    papers: paperRepository,
+    savedPapers: savedPaperRepository,
+    documents: documentRepository,
+    agents: agentRepository,
+  });
+  const activityService = createActivityService(activityRepository);
+  const overviewService = createOverviewService(activityRepository);
   const spaceService = createSpaceService(spaceRepository, {
     spaceDeleted: (spaceId) => hub.revokeSpace(spaceId),
   });
@@ -120,6 +137,8 @@ export async function createRealtimeTestServer() {
     logger,
     checkDatabase: () => Promise.resolve(),
     authService,
+    activityService,
+    overviewService,
     agentService,
     spaceService,
     connectionService,

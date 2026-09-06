@@ -7,6 +7,8 @@ import { createApp } from "./app";
 import { loadEnvironment } from "./config/env";
 import { createLogger } from "./config/logger";
 import { createDatabase } from "./db/client";
+import { createDrizzleActivityRepository } from "./modules/activity/repository";
+import { createActivityService } from "./modules/activity/service";
 import { OpenAICompatibleAgentDecisionProvider } from "./integrations/agent-decision/openai-compatible-provider";
 import { ArxivClient } from "./integrations/arxiv/client";
 import { OpenAICompatibleDocumentEmbeddingGenerator } from "./integrations/document-embedding/openai-compatible-document-embedding-generator";
@@ -37,6 +39,7 @@ import { createDrizzleAuthRepository } from "./modules/auth/repository";
 import { createAuthService } from "./modules/auth/service";
 import { createDrizzleMemberRepository } from "./modules/members/repository";
 import { createMemberService } from "./modules/members/service";
+import { createOverviewService } from "./modules/overview/service";
 import { createGroundedAnswerService } from "./modules/grounded-answer/service";
 import { createDrizzlePaperRepository } from "./modules/research/paper-repository";
 import { createDrizzleSavedPaperRepository } from "./modules/research/saved-paper-repository";
@@ -57,6 +60,9 @@ const environment = loadEnvironment();
 const logger = createLogger(environment);
 const database = createDatabase(environment.DATABASE_URL);
 const realtimeHub = new RealtimeHub();
+const activityRepository = createDrizzleActivityRepository(database);
+const activityService = createActivityService(activityRepository);
+const overviewService = createOverviewService(activityRepository);
 const authService = createAuthService(createDrizzleAuthRepository(database), {
   sessionEnded: (tokenHash) => realtimeHub.closeSession(tokenHash),
 });
@@ -179,6 +185,8 @@ const app = createApp({
   logger,
   checkDatabase: () => database.checkHealth(),
   authService,
+  activityService,
+  overviewService,
   agentService,
   spaceService,
   connectionService,

@@ -3,6 +3,7 @@ import pino, { type Logger } from "pino";
 import { createApp } from "../../server/app";
 import type { Environment } from "../../server/config/env";
 import { createAuthService } from "../../server/modules/auth/service";
+import { createActivityService } from "../../server/modules/activity/service";
 import { createAgentService } from "../../server/modules/agents/service";
 import { createChatService } from "../../server/modules/chat/service";
 import { createConnectionService } from "../../server/modules/connections/service";
@@ -17,6 +18,7 @@ import {
   type DocumentEmbeddingGenerator,
 } from "../../server/modules/documents/document-embedding-generator";
 import { createMemberService } from "../../server/modules/members/service";
+import { createOverviewService } from "../../server/modules/overview/service";
 import type { ArxivClient } from "../../server/integrations/arxiv/client";
 import type { ResearchSummaryGenerator } from "../../server/integrations/research-summary/generator";
 import type { GroundedAnswerGenerator } from "../../server/integrations/grounded-answer/generator";
@@ -38,6 +40,7 @@ import {
   InMemorySpaceRepository,
 } from "./in-memory-repositories";
 import { InMemoryAgentRepository } from "./in-memory-agent-repository";
+import { InMemoryActivityRepository } from "./in-memory-activity-repository";
 import type { ResearchPaperSearchResult } from "../../shared/contracts/research";
 
 export const testEnvironment: Environment = {
@@ -88,6 +91,19 @@ export function createTestApp(
   );
   const authService = createAuthService(authRepository);
   const agentRepository = new InMemoryAgentRepository(spaceRepository);
+  const activityRepository = new InMemoryActivityRepository({
+    auth: authRepository,
+    spaces: spaceRepository,
+    connections: connectionRepository,
+    members: memberRepository,
+    chat: chatRepository,
+    papers: paperRepository,
+    savedPapers: savedPaperRepository,
+    documents: documentRepository,
+    agents: agentRepository,
+  });
+  const activityService = createActivityService(activityRepository);
+  const overviewService = createOverviewService(activityRepository);
   const agentService = createAgentService(agentRepository, {
     getSnapshot: () => ({ ready: true, providerModel: "test-agent-model" }),
   });
@@ -122,6 +138,8 @@ export function createTestApp(
     logger,
     checkDatabase,
     authService,
+    activityService,
+    overviewService,
     agentService,
     spaceService,
     connectionService,
@@ -137,6 +155,7 @@ export function createTestApp(
   return {
     app,
     authRepository,
+    activityRepository,
     agentRepository,
     agentService,
     spaceRepository,
@@ -150,6 +169,8 @@ export function createTestApp(
     semanticRetrievalRepository,
     documentStorage,
     authService,
+    activityService,
+    overviewService,
     spaceService,
     chatService,
     researchService,
