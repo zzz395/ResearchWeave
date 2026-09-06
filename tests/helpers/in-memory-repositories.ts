@@ -43,6 +43,7 @@ import {
   type PaperRepository,
 } from "../../server/modules/research/paper-repository";
 import type {
+  FindSavedPapersForMemberResult,
   RemoveSavedPaperResult,
   SavedPaperListResult,
   SavedPaperRepository,
@@ -451,6 +452,23 @@ export class InMemorySavedPaperRepository implements SavedPaperRepository {
         const paper = this.papers.papers.get(record.paperId);
         return paper ? [{ ...record, paper }] : [];
       });
+    return Promise.resolve({ status: "ok", records });
+  }
+
+  findManyForMember(
+    spaceId: string,
+    paperIds: string[],
+    actorId: string,
+  ): Promise<FindSavedPapersForMemberResult> {
+    if (!this.spaces.hasMembership(spaceId, actorId)) {
+      return Promise.resolve({ status: "space_not_found" });
+    }
+    const selectedIds = new Set(paperIds);
+    const records = [...this.savedPapers.values()].flatMap((record) => {
+      if (record.spaceId !== spaceId || !selectedIds.has(record.paperId)) return [];
+      const paper = this.papers.papers.get(record.paperId);
+      return paper ? [{ ...record, paper }] : [];
+    });
     return Promise.resolve({ status: "ok", records });
   }
 

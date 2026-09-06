@@ -22,7 +22,9 @@ import { createOverviewService } from "../../server/modules/overview/service";
 import type { ArxivClient } from "../../server/integrations/arxiv/client";
 import type { ResearchSummaryGenerator } from "../../server/integrations/research-summary/generator";
 import type { GroundedAnswerGenerator } from "../../server/integrations/grounded-answer/generator";
+import type { PaperComparisonGenerator } from "../../server/integrations/paper-comparison/generator";
 import { createGroundedAnswerService } from "../../server/modules/grounded-answer/service";
+import { createPaperComparisonService } from "../../server/modules/paper-comparison/service";
 import { createResearchService } from "../../server/modules/research/service";
 import { createSemanticRetrievalService } from "../../server/modules/retrieval/service";
 import { createSpaceService } from "../../server/modules/spaces/service";
@@ -72,6 +74,7 @@ export function createTestApp(
   retrievalEmbeddingGenerator: DocumentEmbeddingGenerator =
     new UnconfiguredDocumentEmbeddingGenerator(),
   groundedAnswerGenerator?: GroundedAnswerGenerator,
+  paperComparisonGenerator?: PaperComparisonGenerator,
 ) {
   const authRepository = new InMemoryAuthRepository();
   const spaceRepository = new InMemorySpaceRepository();
@@ -118,6 +121,11 @@ export function createTestApp(
     summaryRepository,
     summaryGenerator,
   );
+  const paperComparisonService = createPaperComparisonService(
+    savedPaperRepository,
+    spaceRepository,
+    paperComparisonGenerator,
+  );
   const documentService = createDocumentService(documentRepository, documentStorage, logger);
   const semanticRetrievalService = createSemanticRetrievalService(
     semanticRetrievalRepository,
@@ -146,6 +154,7 @@ export function createTestApp(
     memberService,
     chatService,
     researchService,
+    paperComparisonService,
     groundedAnswerService,
     semanticRetrievalService,
     documentService,
@@ -174,6 +183,7 @@ export function createTestApp(
     spaceService,
     chatService,
     researchService,
+    paperComparisonService,
     groundedAnswerService,
     semanticRetrievalService,
     documentService,
