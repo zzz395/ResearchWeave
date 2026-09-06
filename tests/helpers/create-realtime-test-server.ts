@@ -14,6 +14,7 @@ import { createGroundedAnswerService } from "../../server/modules/grounded-answe
 import { UnconfiguredDocumentEmbeddingGenerator } from "../../server/modules/documents/document-embedding-generator";
 import { createMemberService } from "../../server/modules/members/service";
 import { createOverviewService } from "../../server/modules/overview/service";
+import { createPaperComparisonService } from "../../server/modules/paper-comparison/service";
 import { createResearchService } from "../../server/modules/research/service";
 import { createSemanticRetrievalService } from "../../server/modules/retrieval/service";
 import { createSpaceService, type SpaceService } from "../../server/modules/spaces/service";
@@ -121,6 +122,10 @@ export async function createRealtimeTestServer() {
     },
     summaryRepository,
   );
+  const paperComparisonService = createPaperComparisonService(
+    savedPaperRepository,
+    spaceRepository,
+  );
   const logger = pino({ level: "silent" });
   const documentService = createDocumentService(documentRepository, documentStorage, logger);
   const semanticRetrievalService = createSemanticRetrievalService(
@@ -145,6 +150,7 @@ export async function createRealtimeTestServer() {
     memberService,
     chatService,
     researchService,
+    paperComparisonService,
     groundedAnswerService,
     semanticRetrievalService,
     documentService,

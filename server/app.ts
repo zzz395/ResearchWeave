@@ -35,6 +35,8 @@ import { createMemberRouter } from "./modules/members/routes";
 import type { MemberService } from "./modules/members/service";
 import { createOverviewRouter } from "./modules/overview/routes";
 import type { OverviewService } from "./modules/overview/service";
+import { createPaperComparisonRouter } from "./modules/paper-comparison/routes";
+import type { PaperComparisonService } from "./modules/paper-comparison/service";
 import { createResearchRouter, createSavedPaperRouter } from "./modules/research/routes";
 import type { ResearchService } from "./modules/research/service";
 import { createSemanticRetrievalRouter } from "./modules/retrieval/routes";
@@ -57,6 +59,7 @@ export interface AppDependencies {
   memberService: MemberService;
   chatService: ChatService;
   researchService: ResearchService;
+  paperComparisonService: PaperComparisonService;
   groundedAnswerService: GroundedAnswerService;
   semanticRetrievalService: SemanticRetrievalService;
   documentService: DocumentService;
@@ -76,6 +79,7 @@ export function createApp({
   memberService,
   chatService,
   researchService,
+  paperComparisonService,
   groundedAnswerService,
   semanticRetrievalService,
   documentService,
@@ -126,6 +130,11 @@ export function createApp({
     "/api/v1/spaces/:spaceId/saved-papers",
     requireAuthentication,
     createSavedPaperRouter(researchService),
+  );
+  app.use(
+    "/api/v1/spaces/:spaceId/paper-comparisons",
+    requireAuthentication,
+    createPaperComparisonRouter(paperComparisonService),
   );
   app.use(
     "/api/v1/spaces/:spaceId/knowledge/ask",

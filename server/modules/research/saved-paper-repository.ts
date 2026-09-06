@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import type { Database } from "../../db/client";
 import {
@@ -17,6 +17,10 @@ export type SavedPaperListResult =
   | { status: "ok"; records: SavedPaperWithPaper[] }
   | { status: "space_not_found" };
 
+export type FindSavedPapersForMemberResult =
+  | { status: "ok"; records: SavedPaperWithPaper[] }
+  | { status: "space_not_found" };
+
 export type SavePaperResult =
   | { status: "created" | "existing"; record: SavedPaperWithPaper }
   | { status: "space_not_found" }
@@ -28,6 +32,11 @@ export type RemoveSavedPaperResult =
 
 export interface SavedPaperRepository {
   listForMember(spaceId: string, actorId: string): Promise<SavedPaperListResult>;
+  findManyForMember(
+    spaceId: string,
+    paperIds: string[],
+    actorId: string,
+  ): Promise<FindSavedPapersForMemberResult>;
   saveForMember(input: {
     spaceId: string;
     paperId: string;
@@ -61,6 +70,31 @@ export function createDrizzleSavedPaperRepository(database: Database): SavedPape
           .innerJoin(papers, eq(papers.id, savedPapers.paperId))
           .where(eq(savedPapers.spaceId, spaceId))
           .orderBy(desc(savedPapers.savedAt), desc(savedPapers.paperId));
+        return {
+          status: "ok",
+          records: rows.map(({ savedPaper, paper }) => ({ ...savedPaper, paper })),
+        };
+      });
+    },
+
+    async findManyForMember(spaceId, paperIds, actorId) {
+      return db.transaction(async (transaction): Promise<FindSavedPapersForMemberResult> => {
+        const [membership] = await transaction
+          .select({ userId: spaceMembers.userId })
+          .from(spaceMembers)
+          .where(and(eq(spaceMembers.spaceId, spaceId), eq(spaceMembers.userId, actorId)))
+          .limit(1)
+          .for("share");
+        if (!membership) return { status: "space_not_found" };
+        if (paperIds.length === 0) return { status: "ok", records: [] };
+
+        const rows = await transaction
+          .select({ savedPaper: savedPapers, paper: papers })
+          .from(savedPapers)
+          .innerJoin(papers, eq(papers.id, savedPapers.paperId))
+          .where(
+            and(eq(savedPapers.spaceId, spaceId), inArray(savedPapers.paperId, paperIds)),
+          );
         return {
           status: "ok",
           records: rows.map(({ savedPaper, paper }) => ({ ...savedPaper, paper })),

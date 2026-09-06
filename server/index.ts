@@ -16,6 +16,7 @@ import { createDocumentTextExtractor } from "./integrations/document-extraction/
 import { LocalFilesystemDocumentStorage } from "./integrations/document-storage/local-filesystem-storage";
 import { createDocumentUploadMiddleware } from "./integrations/document-upload/middleware";
 import { OpenAICompatibleGroundedAnswerGenerator } from "./integrations/grounded-answer/openai-compatible-generator";
+import { OpenAICompatiblePaperComparisonGenerator } from "./integrations/paper-comparison/openai-compatible-generator";
 import { OpenAICompatibleResearchSummaryGenerator } from "./integrations/research-summary/openai-compatible-generator";
 import { createDrizzleAgentRepository } from "./modules/agents/repository";
 import { createAgentRunExecutor } from "./modules/agents/run-executor";
@@ -40,6 +41,7 @@ import { createAuthService } from "./modules/auth/service";
 import { createDrizzleMemberRepository } from "./modules/members/repository";
 import { createMemberService } from "./modules/members/service";
 import { createOverviewService } from "./modules/overview/service";
+import { createPaperComparisonService } from "./modules/paper-comparison/service";
 import { createGroundedAnswerService } from "./modules/grounded-answer/service";
 import { createDrizzlePaperRepository } from "./modules/research/paper-repository";
 import { createDrizzleSavedPaperRepository } from "./modules/research/saved-paper-repository";
@@ -97,12 +99,27 @@ const summaryGenerator =
         model: environment.LLM_MODEL,
       })
     : undefined;
+const paperRepository = createDrizzlePaperRepository(database);
+const savedPaperRepository = createDrizzleSavedPaperRepository(database);
 const researchService = createResearchService(
-  createDrizzlePaperRepository(database),
-  createDrizzleSavedPaperRepository(database),
+  paperRepository,
+  savedPaperRepository,
   new ArxivClient(),
   createDrizzlePaperSummaryRepository(database),
   summaryGenerator,
+);
+const paperComparisonGenerator =
+  environment.LLM_BASE_URL && environment.LLM_API_KEY && environment.LLM_MODEL
+    ? new OpenAICompatiblePaperComparisonGenerator({
+        baseUrl: environment.LLM_BASE_URL,
+        apiKey: environment.LLM_API_KEY,
+        model: environment.LLM_MODEL,
+      })
+    : undefined;
+const paperComparisonService = createPaperComparisonService(
+  savedPaperRepository,
+  spaceRepository,
+  paperComparisonGenerator,
 );
 const documentEmbeddingGenerator: DocumentEmbeddingGenerator =
   environment.LLM_BASE_URL && environment.LLM_API_KEY
@@ -193,6 +210,7 @@ const app = createApp({
   memberService,
   chatService,
   researchService,
+  paperComparisonService,
   groundedAnswerService,
   semanticRetrievalService,
   documentService,
