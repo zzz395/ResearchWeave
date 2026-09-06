@@ -56,6 +56,10 @@ export const router = createBrowserRouter([
                 path: "saved-papers",
                 lazy: () => import("../features/research/pages/saved-papers-page"),
               },
+              {
+                path: "saved-papers/compare",
+                lazy: () => import("../features/research/pages/paper-comparison-page"),
+              },
               { path: "knowledge", lazy: () => import("../features/knowledge/pages/knowledge-page") },
               { path: "members", lazy: () => import("../features/members/pages/space-members-page") },
               { path: "settings", lazy: () => import("../features/spaces/pages/space-settings-page") },
