@@ -13,6 +13,7 @@ import { formatResearchDate } from "../../spaces/format-research-date";
 import { researchQueryKeys } from "../api/query-keys";
 import { listSavedPapers, removeSavedPaper } from "../api/research";
 import { ExternalPaperLink, PaperSummary } from "../components/paper-presentation";
+import { getPaperComparisonPath } from "../paper-comparison-state";
 import {
   getResearchWorkflowRoutes,
   SAVED_PAPER_KNOWLEDGE_GUIDANCE,
@@ -60,6 +61,11 @@ export function Component() {
   return (
     <section className="rw-space-tab-panel rw-saved-papers">
       <SectionHeader
+        action={
+          <Button asChild variant="secondary">
+            <Link to={getPaperComparisonPath(space.id)}>Compare papers</Link>
+          </Button>
+        }
         className="rw-saved-papers__heading"
         count={`${savedPapersQuery.data.length} saved`}
         title="Saved papers"
