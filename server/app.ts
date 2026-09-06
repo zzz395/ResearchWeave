@@ -14,6 +14,8 @@ import { createRequestLogger } from "./middleware/request-logger";
 import { createSessionMiddleware, requireAuthentication } from "./modules/auth/middleware";
 import { createAuthRouter } from "./modules/auth/routes";
 import type { AuthService } from "./modules/auth/service";
+import { createActivityRouter } from "./modules/activity/routes";
+import type { ActivityService } from "./modules/activity/service";
 import {
   createAgentDefinitionRouter,
   createAgentRunRouter,
@@ -31,6 +33,8 @@ import { createGroundedAnswerRouter } from "./modules/grounded-answer/routes";
 import type { GroundedAnswerService } from "./modules/grounded-answer/service";
 import { createMemberRouter } from "./modules/members/routes";
 import type { MemberService } from "./modules/members/service";
+import { createOverviewRouter } from "./modules/overview/routes";
+import type { OverviewService } from "./modules/overview/service";
 import { createResearchRouter, createSavedPaperRouter } from "./modules/research/routes";
 import type { ResearchService } from "./modules/research/service";
 import { createSemanticRetrievalRouter } from "./modules/retrieval/routes";
@@ -45,6 +49,8 @@ export interface AppDependencies {
   logger: Logger;
   checkDatabase: DatabaseHealthCheck;
   authService: AuthService;
+  activityService: ActivityService;
+  overviewService: OverviewService;
   agentService: AgentService;
   spaceService: SpaceService;
   connectionService: ConnectionService;
@@ -62,6 +68,8 @@ export function createApp({
   logger,
   checkDatabase,
   authService,
+  activityService,
+  overviewService,
   agentService,
   spaceService,
   connectionService,
@@ -93,6 +101,8 @@ export function createApp({
   app.use("/api/v1", createOriginGuard(environment));
   app.use(createSessionMiddleware(authService, environment));
   app.use("/api/v1/auth", createAuthRouter({ authService, environment }));
+  app.use("/api/v1/activity", requireAuthentication, createActivityRouter(activityService));
+  app.use("/api/v1/overview", requireAuthentication, createOverviewRouter(overviewService));
   app.use("/api/v1/agents", requireAuthentication, createAgentDefinitionRouter(agentService));
   app.use("/api/v1/agent-tasks", requireAuthentication, createAgentTaskRouter(agentService));
   app.use("/api/v1/agent-runs", requireAuthentication, createAgentRunRouter(agentService));
