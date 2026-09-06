@@ -13,6 +13,8 @@ describe("Primary navigation architecture", () => {
       {
         label: "Workspace",
         destinations: [
+          { icon: "overview", label: "Overview", to: "/overview" },
+          { icon: "activity", label: "Activity", to: "/activity" },
           { icon: "spaces", label: "Spaces", to: "/spaces" },
           { icon: "agents", label: "Agents", to: "/agents" },
           { icon: "connections", label: "Connections", to: "/connections" },

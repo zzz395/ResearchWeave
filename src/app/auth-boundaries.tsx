@@ -3,13 +3,16 @@ import { Navigate, Outlet, useLocation, useSearchParams } from "react-router-dom
 import { Button } from "../components/ui/button";
 import { ErrorPanel, PageLoading } from "../components/ui/feedback";
 import { useAuth } from "../features/auth/auth-state";
-import { safeReturnPath } from "../features/auth/safe-return-path";
+import {
+  DEFAULT_AUTHENTICATED_PATH,
+  safeReturnPath,
+} from "../features/auth/safe-return-path";
 
 export function AuthResolution() {
   const { user, isLoading, error, retry } = useAuth();
   if (isLoading) return <FullPageLoading />;
   if (error) return <AuthLoadError onRetry={retry} />;
-  return <Navigate replace to={user ? "/spaces" : "/login"} />;
+  return <Navigate replace to={user ? DEFAULT_AUTHENTICATED_PATH : "/login"} />;
 }
 
 export function ProtectedBoundary() {

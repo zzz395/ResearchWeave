@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { safeReturnPath } from "../../src/features/auth/safe-return-path";
+import {
+  DEFAULT_AUTHENTICATED_PATH,
+  safeReturnPath,
+} from "../../src/features/auth/safe-return-path";
 
 describe("safeReturnPath", () => {
   it("keeps bounded local application paths", () => {
@@ -10,10 +13,12 @@ describe("safeReturnPath", () => {
   });
 
   it("rejects external, protocol-relative, authentication, and oversized destinations", () => {
-    expect(safeReturnPath("https://attacker.example/steal")).toBe("/spaces");
-    expect(safeReturnPath("//attacker.example/steal")).toBe("/spaces");
-    expect(safeReturnPath("/login?returnTo=/login")).toBe("/spaces");
-    expect(safeReturnPath("/register")).toBe("/spaces");
-    expect(safeReturnPath(`/${"a".repeat(513)}`)).toBe("/spaces");
+    expect(DEFAULT_AUTHENTICATED_PATH).toBe("/overview");
+    expect(safeReturnPath(null)).toBe("/overview");
+    expect(safeReturnPath("https://attacker.example/steal")).toBe("/overview");
+    expect(safeReturnPath("//attacker.example/steal")).toBe("/overview");
+    expect(safeReturnPath("/login?returnTo=/login")).toBe("/overview");
+    expect(safeReturnPath("/register")).toBe("/overview");
+    expect(safeReturnPath(`/${"a".repeat(513)}`)).toBe("/overview");
   });
 });

@@ -11,6 +11,7 @@ import { register } from "../api/auth";
 import { useAuth } from "../auth-state";
 import { AuthLayout } from "../components/auth-layout";
 import { PasswordControl } from "../components/password-control";
+import { DEFAULT_AUTHENTICATED_PATH } from "../safe-return-path";
 
 export function Component() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -40,7 +41,7 @@ export function Component() {
     try {
       const user = await mutation.mutateAsync(parsed.data);
       setAuthenticatedUser(user);
-      void navigate("/spaces", { replace: true });
+      void navigate(DEFAULT_AUTHENTICATED_PATH, { replace: true });
     } catch {
       // The mutation error is rendered below without clearing the form.
     }

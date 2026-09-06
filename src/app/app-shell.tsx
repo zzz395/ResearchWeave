@@ -1,6 +1,17 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { BookOpen, ChevronDown, Library, LogOut, Menu, Network, UsersRound, X } from "lucide-react";
+import {
+  Activity,
+  BookOpen,
+  ChevronDown,
+  LayoutDashboard,
+  Library,
+  LogOut,
+  Menu,
+  Network,
+  UsersRound,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
@@ -11,6 +22,8 @@ import { primaryNavigationGroups } from "./navigation";
 
 const navigationIcons = {
   research: BookOpen,
+  overview: LayoutDashboard,
+  activity: Activity,
   spaces: Library,
   agents: Network,
   connections: UsersRound,

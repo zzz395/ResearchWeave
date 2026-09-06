@@ -1,3 +1,5 @@
+export const DEFAULT_AUTHENTICATED_PATH = "/overview";
+
 export function safeReturnPath(candidate: string | null): string {
   if (
     !candidate ||
@@ -7,7 +9,7 @@ export function safeReturnPath(candidate: string | null): string {
     candidate.startsWith("/login") ||
     candidate.startsWith("/register")
   ) {
-    return "/spaces";
+    return DEFAULT_AUTHENTICATED_PATH;
   }
   return candidate;
 }
