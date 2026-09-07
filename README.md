@@ -33,7 +33,7 @@ Agent definitions, Tasks, Runs, and server-validated evidence are available thro
 
 ### Prerequisites
 
-- Node.js 22 or newer
+- Node.js 22.13.0 or newer
 - npm 11 or newer
 - Docker with Docker Compose
 

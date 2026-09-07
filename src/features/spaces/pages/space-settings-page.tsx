@@ -13,6 +13,7 @@ import { Button } from "../../../components/ui/button";
 import { Alert, ErrorPanel, LoadingLabel } from "../../../components/ui/feedback";
 import { InputField, TextareaField } from "../../../components/ui/form-field";
 import { ApiClientError } from "../../../services/api/client";
+import { useActorOwnershipGuard } from "../../auth/auth-state";
 import { deleteSpace, updateSpace } from "../api/spaces";
 import { useSpaceLayout } from "../components/space-layout-context";
 
@@ -20,6 +21,7 @@ export function Component() {
   const space = useSpaceLayout();
   const spaceId = space.id;
   const navigate = useNavigate();
+  const isActorCurrent = useActorOwnershipGuard();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const [confirmName, setConfirmName] = useState("");
@@ -56,8 +58,10 @@ export function Component() {
     }
     try {
       const updated = await updateMutation.mutateAsync(parsed.data);
+      if (!isActorCurrent()) return;
       queryClient.setQueryData(["spaces", spaceId], updated);
       await queryClient.invalidateQueries({ queryKey: ["spaces"], exact: true });
+      if (!isActorCurrent()) return;
       setSaved(true);
     } catch {
       // The server error is displayed without clearing the editable values.
@@ -67,8 +71,10 @@ export function Component() {
   async function handleDelete() {
     try {
       await deleteMutation.mutateAsync();
+      if (!isActorCurrent()) return;
       queryClient.removeQueries({ queryKey: ["spaces", spaceId] });
       await queryClient.invalidateQueries({ queryKey: ["spaces"], exact: true });
+      if (!isActorCurrent()) return;
       void navigate("/spaces", { replace: true });
     } catch {
       // The confirmation remains open with the real error available.

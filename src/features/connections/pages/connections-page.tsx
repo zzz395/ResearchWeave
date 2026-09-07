@@ -11,7 +11,7 @@ import { queryClient } from "../../../app/query-client";
 import { Button } from "../../../components/ui/button";
 import { Alert, ErrorPanel, LoadingLabel, PageLoading, SectionHeader } from "../../../components/ui/feedback";
 import { InputField } from "../../../components/ui/form-field";
-import { useAuth } from "../../auth/auth-state";
+import { useActorOwnershipGuard, useAuth } from "../../auth/auth-state";
 import { ContentSection, PageHeader } from "../../spaces/components/space-page";
 import { formatResearchDate } from "../../spaces/format-research-date";
 import { ApiClientError } from "../../../services/api/client";
@@ -24,6 +24,7 @@ import {
 
 export function Component() {
   const { user } = useAuth();
+  const isActorCurrent = useActorOwnershipGuard();
   const [emailError, setEmailError] = useState("");
   const connectionsQuery = useQuery({ queryKey: ["connections"], queryFn: listConnections });
   const requestMutation = useMutation({ mutationFn: requestConnection });
@@ -50,6 +51,7 @@ export function Component() {
     }
     try {
       await requestMutation.mutateAsync(parsed.data);
+      if (!isActorCurrent()) return;
       form.reset();
       await refresh();
     } catch {
@@ -60,6 +62,7 @@ export function Component() {
   async function handleAction(connection: Connection, action: ConnectionActionInput["action"]) {
     try {
       await actionMutation.mutateAsync({ id: connection.id, action });
+      if (!isActorCurrent()) return;
       await refresh();
     } catch {
       // The row remains visible and the server error is shown.
@@ -69,6 +72,7 @@ export function Component() {
   async function handleRemove(connection: Connection) {
     try {
       await removeMutation.mutateAsync(connection.id);
+      if (!isActorCurrent()) return;
       await refresh();
     } catch {
       // Removal failures do not hide the durable connection.

@@ -10,6 +10,7 @@ import { Alert, ErrorPanel, LoadingLabel, PageLoading } from "../../../component
 import { queryClient } from "../../../app/query-client";
 import { ApiClientError } from "../../../services/api/client";
 import { REALTIME_ACCESS_REVOKED_EVENT } from "../../../services/realtime/realtime-context";
+import { useActorOwnershipGuard } from "../../auth/auth-state";
 import { ContentSection, PageHeader } from "../../spaces/components/space-page";
 import { formatResearchDate } from "../../spaces/format-research-date";
 import {
@@ -105,6 +106,7 @@ function EvidenceSource({ evidence, spaceId }: { evidence: AgentEvidence; spaceI
 export function Component() {
   const { runId = "" } = useParams();
   const navigate = useNavigate();
+  const isActorCurrent = useActorOwnershipGuard();
   const validRunId = z.string().uuid().safeParse(runId).success;
   const retryIdentity = useRef<ClientRequestIdentity | null>(null);
   const runQuery = useQuery({
@@ -132,6 +134,7 @@ export function Component() {
   const cancelMutation = useMutation({
     mutationFn: cancelAgentRun,
     onSuccess: (response) => {
+      if (!isActorCurrent()) return;
       queryClient.setQueryData(agentQueryKeys.run(response.run.id), response);
       void queryClient.invalidateQueries({ queryKey: agentQueryKeys.task(response.run.taskId), exact: true });
     },
@@ -197,6 +200,7 @@ export function Component() {
         taskId: targetRun.taskId,
         clientRequestId: retryIdentity.current.id,
       });
+      if (!isActorCurrent()) return;
       retryIdentity.current = null;
       void navigate("/agents/runs/" + result.run.id);
     } catch {

@@ -13,6 +13,7 @@ import type { ResearchSpace } from "../../../../shared/contracts/spaces";
 import { Button } from "../../../components/ui/button";
 import { Alert, LoadingLabel } from "../../../components/ui/feedback";
 import { ApiClientError } from "../../../services/api/client";
+import { useActorOwnershipGuard } from "../../auth/auth-state";
 import {
   getAgentApiErrorMessage,
   getAgentAvailabilityPresentation,
@@ -33,6 +34,7 @@ export function NewAgentTaskDialog({
   initialSpaceId?: string;
 }) {
   const navigate = useNavigate();
+  const isActorCurrent = useActorOwnershipGuard();
   const [open, setOpen] = useState(false);
   const [spaceId, setSpaceId] = useState(initialSpaceId ?? "");
   const [agentId, setAgentId] = useState(initialAgentId ?? "");
@@ -86,6 +88,7 @@ export function NewAgentTaskDialog({
 
     try {
       const result = await mutation.mutateAsync({ targetSpaceId: spaceId, input: input.data });
+      if (!isActorCurrent()) return;
       requestIdentity.current = null;
       setPrompt("");
       setOpen(false);

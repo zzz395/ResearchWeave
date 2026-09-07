@@ -9,7 +9,7 @@ import { queryClient } from "../../../app/query-client";
 import { Button } from "../../../components/ui/button";
 import { Alert, EmptyState, ErrorPanel, LoadingLabel, PageLoading, SectionHeader } from "../../../components/ui/feedback";
 import { ApiClientError } from "../../../services/api/client";
-import { useAuth } from "../../auth/auth-state";
+import { useActorOwnershipGuard, useAuth } from "../../auth/auth-state";
 import { useSpaceLayout } from "../../spaces/components/space-layout-context";
 import { documentListQueryOptions } from "../api/document-list-query";
 import { deleteDocument, reindexDocument } from "../api/documents";
@@ -32,6 +32,7 @@ import {
 export function Component() {
   const space = useSpaceLayout();
   const { user } = useAuth();
+  const isActorCurrent = useActorOwnershipGuard();
   const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<string | null>(null);
   const selectedDocumentId = getKnowledgeDocumentId(searchParams);
@@ -70,8 +71,10 @@ export function Component() {
     setNotice(null);
     try {
       const queued = await reindexMutation.mutateAsync(document.id);
+      if (!isActorCurrent()) return;
       queryClient.setQueryData(documentQueryKeys.detail(space.id, document.id), queued);
       await queryClient.invalidateQueries({ queryKey, exact: true });
+      if (!isActorCurrent()) return;
       setNotice(
         document.status === "failed"
           ? "Document queued to retry indexing."
@@ -88,8 +91,10 @@ export function Component() {
     try {
       const deletedId = deleteTarget.id;
       await deleteMutation.mutateAsync(deletedId);
+      if (!isActorCurrent()) return;
       queryClient.removeQueries({ queryKey: documentQueryKeys.detail(space.id, deletedId), exact: true });
       await queryClient.invalidateQueries({ queryKey, exact: true });
+      if (!isActorCurrent()) return;
       if (selectedDocumentId === deletedId) openDocument(null);
       setDeleteTarget(null);
       setNotice("Document and indexed knowledge removed from this Space.");

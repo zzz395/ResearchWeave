@@ -16,7 +16,8 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { Brand } from "../components/brand";
-import { useAuth } from "../features/auth/auth-state";
+import { useActorOwnershipGuard, useAuth } from "../features/auth/auth-state";
+import { actorOwnership } from "../features/auth/actor-ownership";
 import { REALTIME_ACCESS_REVOKED_EVENT } from "../services/realtime/realtime-context";
 import { primaryNavigationGroups } from "./navigation";
 
@@ -31,6 +32,7 @@ const navigationIcons = {
 
 function UserMenu({ compact = false }: { compact?: boolean }) {
   const { user, logout } = useAuth();
+  const isActorCurrent = useActorOwnershipGuard();
   const navigate = useNavigate();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [error, setError] = useState("");
@@ -48,6 +50,7 @@ function UserMenu({ compact = false }: { compact?: boolean }) {
     setError("");
     try {
       await logout();
+      if (!isActorCurrent()) return;
       void navigate("/login", { replace: true });
     } catch {
       setError("Logout failed. Please try again.");
@@ -160,7 +163,16 @@ export function AppShell() {
   const [accessNotice, setAccessNotice] = useState("");
 
   useEffect(() => {
-    const handleRevoked = () => {
+    const handleRevoked = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        actorId?: string | null;
+        generation?: number;
+      }>).detail;
+      if (
+        detail?.actorId !== undefined
+        && detail.generation !== undefined
+        && !actorOwnership.ownsGeneration(detail.actorId, detail.generation)
+      ) return;
       setAccessNotice("Your access to that Research Space changed. You have been returned to your spaces.");
       void navigate("/spaces", { replace: true });
     };

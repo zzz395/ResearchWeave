@@ -4,6 +4,7 @@ import { Sparkles } from "lucide-react";
 import type { ResearchPaperSummary } from "../../../../shared/contracts/research";
 import { Button } from "../../../components/ui/button";
 import { ErrorPanel, LoadingLabel } from "../../../components/ui/feedback";
+import { useActorOwnershipGuard } from "../../auth/auth-state";
 import { researchQueryKeys } from "../api/query-keys";
 import {
   ensureResearchPaperSummary,
@@ -37,6 +38,7 @@ function GeneratedSummary({ summary }: { summary: ResearchPaperSummary }) {
 }
 
 export function PaperAiSummary({ paperId }: { paperId: string }) {
+  const isActorCurrent = useActorOwnershipGuard();
   const queryClient = useQueryClient();
   const queryKey = researchQueryKeys.summary(paperId);
   const summaryQuery = useQuery({
@@ -45,7 +47,9 @@ export function PaperAiSummary({ paperId }: { paperId: string }) {
   });
   const generateMutation = useMutation({
     mutationFn: () => ensureResearchPaperSummary(paperId),
-    onSuccess: (summary) => queryClient.setQueryData(queryKey, summary),
+    onSuccess: (summary) => {
+      if (isActorCurrent()) queryClient.setQueryData(queryKey, summary);
+    },
   });
   const error = getSummaryError(generateMutation.error ?? summaryQuery.error);
 
