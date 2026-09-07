@@ -7,7 +7,7 @@ import { queryClient } from "../../../app/query-client";
 import { Button } from "../../../components/ui/button";
 import { Alert, EmptyState, ErrorPanel, PageLoading, SectionHeader } from "../../../components/ui/feedback";
 import { ApiClientError } from "../../../services/api/client";
-import { useAuth } from "../../auth/auth-state";
+import { useActorOwnershipGuard, useAuth } from "../../auth/auth-state";
 import { useSpaceLayout } from "../../spaces/components/space-layout-context";
 import { formatResearchDate } from "../../spaces/format-research-date";
 import { researchQueryKeys } from "../api/query-keys";
@@ -22,6 +22,7 @@ import {
 export function Component() {
   const space = useSpaceLayout();
   const { user } = useAuth();
+  const isActorCurrent = useActorOwnershipGuard();
   const queryKey = researchQueryKeys.savedPapers(space.id);
   const workflowRoutes = getResearchWorkflowRoutes(space.id);
   const savedPapersQuery = useQuery({
@@ -35,6 +36,7 @@ export function Component() {
   async function handleRemove(savedPaper: SavedPaper) {
     try {
       await removeMutation.mutateAsync(savedPaper.paper.id);
+      if (!isActorCurrent()) return;
       await queryClient.invalidateQueries({ queryKey, exact: true });
     } catch {
       // Keep the server-backed record visible until a removal succeeds.

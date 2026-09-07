@@ -10,6 +10,7 @@ import { Alert, ErrorPanel, LoadingLabel, PageLoading } from "../../../component
 import { queryClient } from "../../../app/query-client";
 import { ApiClientError } from "../../../services/api/client";
 import { REALTIME_ACCESS_REVOKED_EVENT } from "../../../services/realtime/realtime-context";
+import { useActorOwnershipGuard } from "../../auth/auth-state";
 import { ContentSection, PageHeader } from "../../spaces/components/space-page";
 import { formatResearchDate } from "../../spaces/format-research-date";
 import {
@@ -63,6 +64,7 @@ function RunAttempt({ run, latest }: { run: AgentRun; latest: boolean }) {
 export function Component() {
   const { taskId = "" } = useParams();
   const navigate = useNavigate();
+  const isActorCurrent = useActorOwnershipGuard();
   const validTaskId = z.string().uuid().safeParse(taskId).success;
   const retryIdentity = useRef<ClientRequestIdentity | null>(null);
   const taskQuery = useQuery({
@@ -81,6 +83,7 @@ export function Component() {
   const cancelMutation = useMutation({
     mutationFn: cancelAgentRun,
     onSuccess: async (response) => {
+      if (!isActorCurrent()) return;
       queryClient.setQueryData(agentQueryKeys.run(response.run.id), response);
       await queryClient.invalidateQueries({ queryKey: agentQueryKeys.task(taskId), exact: true });
     },
@@ -141,8 +144,10 @@ export function Component() {
         targetTaskId: task.id,
         clientRequestId: retryIdentity.current.id,
       });
+      if (!isActorCurrent()) return;
       retryIdentity.current = null;
       await queryClient.invalidateQueries({ queryKey: agentQueryKeys.task(task.id), exact: true });
+      if (!isActorCurrent()) return;
       void navigate("/agents/runs/" + result.run.id);
     } catch {
       // Retain the request identity for a safe retry after an uncertain response.

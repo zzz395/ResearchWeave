@@ -8,12 +8,14 @@ import { Alert, LoadingLabel } from "../../../components/ui/feedback";
 import { InputField, TextareaField } from "../../../components/ui/form-field";
 import { queryClient } from "../../../app/query-client";
 import { ApiClientError } from "../../../services/api/client";
+import { useActorOwnershipGuard } from "../../auth/auth-state";
 import { createSpace } from "../api/spaces";
 import { Breadcrumb, ContentSection, PageHeader } from "../components/space-page";
 
 export function Component() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const navigate = useNavigate();
+  const isActorCurrent = useActorOwnershipGuard();
   const mutation = useMutation({ mutationFn: createSpace });
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -31,7 +33,9 @@ export function Component() {
     }
     try {
       const space = await mutation.mutateAsync(parsed.data);
+      if (!isActorCurrent()) return;
       await queryClient.invalidateQueries({ queryKey: ["spaces"] });
+      if (!isActorCurrent()) return;
       queryClient.setQueryData(["spaces", space.id], space);
       void navigate(`/spaces/${space.id}`);
     } catch {

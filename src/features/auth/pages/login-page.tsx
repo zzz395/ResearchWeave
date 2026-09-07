@@ -8,7 +8,7 @@ import { Alert, LoadingLabel } from "../../../components/ui/feedback";
 import { InputField } from "../../../components/ui/form-field";
 import { ApiClientError } from "../../../services/api/client";
 import { login } from "../api/auth";
-import { useAuth } from "../auth-state";
+import { useActorOwnershipGuard, useAuth } from "../auth-state";
 import { AuthLayout } from "../components/auth-layout";
 import { PasswordControl } from "../components/password-control";
 import { safeReturnPath } from "../safe-return-path";
@@ -17,6 +17,7 @@ export function Component() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [searchParams] = useSearchParams();
   const { setAuthenticatedUser } = useAuth();
+  const isActorCurrent = useActorOwnershipGuard();
   const navigate = useNavigate();
   const mutation = useMutation({ mutationFn: login });
 
@@ -39,6 +40,7 @@ export function Component() {
 
     try {
       const user = await mutation.mutateAsync(parsed.data);
+      if (!isActorCurrent()) return;
       setAuthenticatedUser(user);
       void navigate(safeReturnPath(searchParams.get("returnTo")), { replace: true });
     } catch {

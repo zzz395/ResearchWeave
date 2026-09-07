@@ -7,6 +7,7 @@ import { queryClient } from "../../../app/query-client";
 import { Button } from "../../../components/ui/button";
 import { Alert, LoadingLabel } from "../../../components/ui/feedback";
 import { ApiClientError } from "../../../services/api/client";
+import { useActorOwnershipGuard } from "../../auth/auth-state";
 import { uploadDocument } from "../api/documents";
 import { documentQueryKeys } from "../api/query-keys";
 import { validateDocumentFile } from "../document-presentation";
@@ -18,6 +19,7 @@ export function DocumentUploadDialog({
   spaceId: string;
   onUploaded: (message: string) => void;
 }) {
+  const isActorCurrent = useActorOwnershipGuard();
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -59,10 +61,12 @@ export function DocumentUploadDialog({
     if (!file) return;
     try {
       const result = await uploadMutation.mutateAsync(file);
+      if (!isActorCurrent()) return;
       await queryClient.invalidateQueries({
         queryKey: documentQueryKeys.list(spaceId),
         exact: true,
       });
+      if (!isActorCurrent()) return;
       onUploaded(
         result.created
           ? "Document uploaded and queued for indexing."

@@ -9,7 +9,7 @@ import { Button } from "../../../components/ui/button";
 import { Alert, ErrorPanel, LoadingLabel, PageLoading, SectionHeader } from "../../../components/ui/feedback";
 import { ApiClientError } from "../../../services/api/client";
 import { useRealtime } from "../../../services/realtime/realtime-context";
-import { useAuth } from "../../auth/auth-state";
+import { useActorOwnershipGuard, useAuth } from "../../auth/auth-state";
 import { listConnections } from "../../connections/api/connections";
 import { useSpaceLayout } from "../../spaces/components/space-layout-context";
 import { addMember, listMembers, removeMember } from "../api/members";
@@ -17,6 +17,7 @@ import { addMember, listMembers, removeMember } from "../api/members";
 export function Component() {
   const space = useSpaceLayout();
   const { user } = useAuth();
+  const isActorCurrent = useActorOwnershipGuard();
   const navigate = useNavigate();
   const { subscribeSpace } = useRealtime();
   const [presentUserIds, setPresentUserIds] = useState<string[]>([]);
@@ -53,6 +54,7 @@ export function Component() {
   async function handleAdd(userId: string) {
     try {
       await addMutation.mutateAsync(userId);
+      if (!isActorCurrent()) return;
       await refreshMembers();
     } catch {
       // The accepted connection remains available for a truthful retry.
@@ -62,7 +64,9 @@ export function Component() {
   async function handleRemove(member: SpaceMember) {
     try {
       await removeMutation.mutateAsync(member.user.id);
+      if (!isActorCurrent()) return;
       await refreshMembers();
+      if (!isActorCurrent()) return;
       if (member.user.id === user?.id) void navigate("/spaces", { replace: true });
     } catch {
       // The server remains the membership source of truth.

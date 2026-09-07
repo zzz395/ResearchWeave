@@ -9,6 +9,7 @@ import { queryClient } from "../../../app/query-client";
 import { Button } from "../../../components/ui/button";
 import { Alert, LoadingLabel } from "../../../components/ui/feedback";
 import { ApiClientError } from "../../../services/api/client";
+import { useActorOwnershipGuard } from "../../auth/auth-state";
 import { listSpaces } from "../../spaces/api/spaces";
 import { savePaperToSpace } from "../api/research";
 import { researchQueryKeys } from "../api/query-keys";
@@ -20,6 +21,7 @@ import {
 } from "../research-workflow";
 
 export function SavePaperDialog({ paper }: { paper: PersistentResearchPaper }) {
+  const isActorCurrent = useActorOwnershipGuard();
   const [open, setOpen] = useState(false);
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
   const [savedSpace, setSavedSpace] = useState<ResearchWorkflowSpace | null>(null);
@@ -47,10 +49,12 @@ export function SavePaperDialog({ paper }: { paper: PersistentResearchPaper }) {
     if (!space) return;
     try {
       await saveMutation.mutateAsync(space.id);
+      if (!isActorCurrent()) return;
       await queryClient.invalidateQueries({
         queryKey: researchQueryKeys.savedPapers(space.id),
         exact: true,
       });
+      if (!isActorCurrent()) return;
       setSavedSpace(completeSavePaperWorkflow(space));
       setOpen(false);
     } catch {
