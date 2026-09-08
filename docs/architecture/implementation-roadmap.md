@@ -4,7 +4,7 @@
 
 ResearchWeave progresses from a secure engineering foundation through collaboration, real academic discovery, durable document indexing, grounded knowledge, integrated workflows, and bounded agent orchestration. Every completed phase must represent verifiable behavior backed by durable state or a real external integration; fixtures and timers never stand in for product capability.
 
-The product implementation baseline is complete through **Phase 10 — Product Integration Experience**, including Phase 10A–10D, and is released as `v0.10.0`. Remaining repository audit, reproducibility, evaluation, and portfolio work is tracked separately as unnumbered post-Phase-10 work rather than as an unimplemented product phase.
+The product implementation baseline is complete through **Phase 10 — Product Integration Experience**, including Phase 10A–10D, which was released as `v0.10.0`. The current release baseline is `v0.10.1`, a maintenance patch for post-`v0.10.0` application-demo stability. Remaining repository audit, reproducibility, evaluation, and portfolio work is tracked separately as unnumbered post-Phase-10 work rather than as an unimplemented product phase.
 
 ## Architecture & Product Definition — Completed
 
