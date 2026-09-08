@@ -1,3 +1,4 @@
+import type { Logger } from "pino";
 import { z } from "zod";
 
 import {
@@ -28,6 +29,7 @@ export interface OpenAICompatibleAgentDecisionProviderOptions {
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly model: string;
+  readonly logger: Logger;
   readonly promptRegistry?: AgentOrchestrationPromptRegistry;
   readonly fetchImplementation?: FetchImplementation;
   readonly setTimer?: (callback: () => void, delayMs: number) => TimerHandle;
@@ -47,7 +49,19 @@ interface PreparedAction {
 }
 
 const retryableStatuses = new Set([429, 502, 503, 504]);
+const providerErrorDiagnosticMaxBytes = 4_096;
+const providerErrorDiagnosticReadTimeoutMs = 250;
+const providerDiagnosticValueMaxCharacters = 256;
+const providerRequestIdHeaders = ["x-request-id"] as const;
 const textEncoder = new TextEncoder();
+const diagnosticReadTimedOut = Symbol("diagnosticReadTimedOut");
+
+interface ProviderErrorDiagnostics {
+  readonly providerRequestId?: string;
+  readonly providerErrorType?: string;
+  readonly providerErrorCode?: string;
+  readonly providerErrorParam?: string;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -136,6 +150,129 @@ async function cancelBody(response: Response): Promise<void> {
     await response.body?.cancel();
   } catch {
     // Cancellation is best-effort and must not replace the stable provider error.
+  }
+}
+
+function cancelReaderBestEffort(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  try {
+    void reader.cancel().catch(() => undefined);
+  } catch {
+    // Cancellation is best-effort and must not replace the stable provider error.
+  }
+}
+
+function cancelDiagnosticBodyBestEffort(response: Response): void {
+  try {
+    void response.body?.cancel().catch(() => undefined);
+  } catch {
+    // Cancellation is best-effort and must not replace the stable provider error.
+  }
+}
+
+function boundedDiagnosticValue(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  let containsControlCharacter = false;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const code = trimmed.charCodeAt(index);
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) {
+      containsControlCharacter = true;
+      break;
+    }
+  }
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > providerDiagnosticValueMaxCharacters ||
+    containsControlCharacter
+  ) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function providerRequestId(response: Response): string | undefined {
+  for (const header of providerRequestIdHeaders) {
+    const value = boundedDiagnosticValue(response.headers.get(header));
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function parseProviderErrorDiagnostics(value: unknown): Omit<ProviderErrorDiagnostics, "providerRequestId"> {
+  if (!isRecord(value) || !isRecord(value.error)) return {};
+  const providerErrorType = boundedDiagnosticValue(value.error.type);
+  const providerErrorCode = boundedDiagnosticValue(value.error.code);
+  const providerErrorParam = boundedDiagnosticValue(value.error.param);
+  return {
+    ...(providerErrorType === undefined ? {} : { providerErrorType }),
+    ...(providerErrorCode === undefined ? {} : { providerErrorCode }),
+    ...(providerErrorParam === undefined ? {} : { providerErrorParam }),
+  };
+}
+
+async function readProviderErrorDiagnostics(
+  response: Response,
+  setTimer: (callback: () => void, delayMs: number) => TimerHandle,
+  clearTimer: (handle: TimerHandle) => void,
+): Promise<ProviderErrorDiagnostics> {
+  const requestId = providerRequestId(response);
+  const requestIdDiagnostics = requestId === undefined ? {} : { providerRequestId: requestId };
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null && /^\d+$/u.test(contentLength)) {
+    const declaredBytes = Number(contentLength);
+    if (declaredBytes > providerErrorDiagnosticMaxBytes) {
+      cancelDiagnosticBodyBestEffort(response);
+      return requestIdDiagnostics;
+    }
+  }
+  if (!response.body) return requestIdDiagnostics;
+
+  const reader = response.body.getReader();
+  const readBody = (async (): Promise<unknown> => {
+    const chunks: Uint8Array[] = [];
+    let byteLength = 0;
+    let completed = false;
+    try {
+      while (true) {
+        const result = await reader.read();
+        if (result.done) {
+          completed = true;
+          break;
+        }
+        byteLength += result.value.byteLength;
+        if (byteLength > providerErrorDiagnosticMaxBytes) return undefined;
+        chunks.push(result.value);
+      }
+      if (byteLength === 0) return undefined;
+      const bytes = new Uint8Array(byteLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      if (text.trim().length === 0) return undefined;
+      return JSON.parse(text) as unknown;
+    } catch {
+      return undefined;
+    } finally {
+      if (!completed) cancelReaderBestEffort(reader);
+    }
+  })();
+
+  let timer!: TimerHandle;
+  const readDeadline = new Promise<typeof diagnosticReadTimedOut>((resolve) => {
+    timer = setTimer(() => {
+      cancelReaderBestEffort(reader);
+      resolve(diagnosticReadTimedOut);
+    }, providerErrorDiagnosticReadTimeoutMs);
+  });
+  try {
+    const body = await Promise.race([readBody, readDeadline]);
+    if (body === diagnosticReadTimedOut) return requestIdDiagnostics;
+    return { ...requestIdDiagnostics, ...parseProviderErrorDiagnostics(body) };
+  } finally {
+    clearTimer(timer);
   }
 }
 
@@ -275,6 +412,7 @@ export class OpenAICompatibleAgentDecisionProvider implements AgentDecisionProvi
   readonly model: string;
   readonly #endpoint: string;
   readonly #apiKey: string;
+  readonly #logger: Logger;
   readonly #promptRegistry: AgentOrchestrationPromptRegistry;
   readonly #fetch: FetchImplementation;
   readonly #setTimer: (callback: () => void, delayMs: number) => TimerHandle;
@@ -290,6 +428,7 @@ export class OpenAICompatibleAgentDecisionProvider implements AgentDecisionProvi
     this.model = model;
     this.#endpoint = `${baseUrl}/chat/completions`;
     this.#apiKey = apiKey;
+    this.#logger = options.logger;
     this.#promptRegistry =
       options.promptRegistry ?? defaultAgentOrchestrationPromptRegistry;
     this.#fetch = options.fetchImplementation ?? fetch;
@@ -338,6 +477,7 @@ export class OpenAICompatibleAgentDecisionProvider implements AgentDecisionProvi
           limitsResult.data.timeoutMs,
           limitsResult.data.responseMaxBytes,
           input.signal,
+          attempt,
         );
       } catch (error: unknown) {
         if (input.signal.aborted) throw input.signal.reason;
@@ -355,9 +495,11 @@ export class OpenAICompatibleAgentDecisionProvider implements AgentDecisionProvi
     timeoutMs: number,
     responseMaxBytes: number,
     callerSignal: AbortSignal,
+    attempt: number,
   ): Promise<AgentDecision> {
     const attemptController = new AbortController();
     let timedOut = false;
+    let providerHttpFailureClassified = false;
     const onCallerAbort = () => attemptController.abort(callerSignal.reason);
     callerSignal.addEventListener("abort", onCallerAbort, { once: true });
     const timer = this.#setTimer(() => {
@@ -377,7 +519,25 @@ export class OpenAICompatibleAgentDecisionProvider implements AgentDecisionProvi
       });
       if (callerSignal.aborted) throw callerSignal.reason;
       if (!response.ok) {
-        await cancelBody(response);
+        providerHttpFailureClassified = true;
+        let diagnostics: ProviderErrorDiagnostics = {};
+        try {
+          diagnostics = await readProviderErrorDiagnostics(
+            response,
+            this.#setTimer,
+            this.#clearTimer,
+          );
+        } catch {
+          cancelDiagnosticBodyBestEffort(response);
+        }
+        try {
+          this.#logger.warn(
+            { providerHttpStatus: response.status, attempt, ...diagnostics },
+            "Agent decision provider HTTP failure",
+          );
+        } catch {
+          // Diagnostics are best-effort and must not replace the stable provider error.
+        }
         if (retryableStatuses.has(response.status)) {
           throw new AgentDecisionProviderError("agent_provider_unavailable", true);
         }
@@ -388,6 +548,7 @@ export class OpenAICompatibleAgentDecisionProvider implements AgentDecisionProvi
       return parseDecision(responseJson, preparedActions);
     } catch (error: unknown) {
       if (callerSignal.aborted) throw callerSignal.reason;
+      if (providerHttpFailureClassified && isAgentDecisionProviderError(error)) throw error;
       if (timedOut) {
         throw new AgentDecisionProviderError("agent_provider_timeout", true);
       }

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Logger } from "pino";
 
 import {
   AgentDecisionProviderError,
@@ -93,12 +94,13 @@ function input(overrides: Partial<AgentDecisionProviderInput> = {}): AgentDecisi
   };
 }
 
-function provider(fetchImplementation: typeof fetch) {
+function provider(fetchImplementation: typeof fetch, logger?: Logger) {
   return new OpenAICompatibleAgentDecisionProvider({
     baseUrl: "https://provider.example/v1/",
     apiKey: "secret-api-key",
     model: "test-model",
     fetchImplementation,
+    logger: logger ?? ({ warn: vi.fn() } as unknown as Logger),
   });
 }
 
@@ -497,6 +499,17 @@ describe("OpenAI-compatible Agent decision provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps retryable HTTP failures unavailable after the attempt cap", async () => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(new Response("retryable", { status: 503 })),
+    );
+
+    const error = await capturedError(provider(fetchMock).decide(input()));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expectSafeProviderError(error, "agent_provider_unavailable");
+  });
+
   it("retries a network failure once and caps attempts", async () => {
     const fetchMock = vi.fn<typeof fetch>(() => Promise.reject(new Error("transport secret")));
     const error = await capturedError(provider(fetchMock).decide(input()));
@@ -513,6 +526,126 @@ describe("OpenAI-compatible Agent decision provider", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expectSafeProviderError(error, "agent_provider_rejected");
     expect(String(error)).not.toContain("provider body secret");
+  });
+
+  it("logs only allowlisted structured diagnostics for a rejected HTTP response", async () => {
+    const warn = vi.fn();
+    const logger = { warn } as unknown as Logger;
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({
+      error: {
+        message: "THIS MUST NOT BE LOGGED",
+        type: "invalid_request_error",
+        code: "invalid_function_parameters",
+        param: "tools[3].function.parameters",
+        extra: "UNALLOWLISTED",
+      },
+      requestPayload: "UNALLOWLISTED",
+    }), {
+      status: 400,
+      headers: { "x-request-id": "req_diagnostic_123" },
+    })));
+
+    const error = await capturedError(provider(fetchMock, logger).decide(input()));
+
+    expectSafeProviderError(error, "agent_provider_rejected");
+    expect(warn).toHaveBeenCalledExactlyOnceWith({
+      providerHttpStatus: 400,
+      attempt: 1,
+      providerRequestId: "req_diagnostic_123",
+      providerErrorType: "invalid_request_error",
+      providerErrorCode: "invalid_function_parameters",
+      providerErrorParam: "tools[3].function.parameters",
+    }, "Agent decision provider HTTP failure");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("THIS MUST NOT BE LOGGED");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("UNALLOWLISTED");
+  });
+
+  it("keeps malformed provider error bodies best-effort and safely classified", async () => {
+    const warn = vi.fn();
+    const logger = { warn } as unknown as Logger;
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(new Response("{", {
+      status: 400,
+      headers: { "x-request-id": "req_malformed" },
+    })));
+
+    const error = await capturedError(provider(fetchMock, logger).decide(input()));
+
+    expectSafeProviderError(error, "agent_provider_rejected");
+    expect(warn).toHaveBeenCalledExactlyOnceWith({
+      providerHttpStatus: 400,
+      attempt: 1,
+      providerRequestId: "req_malformed",
+    }, "Agent decision provider HTTP failure");
+  });
+
+  it("caps provider error diagnostics body reads and cancels overflow", async () => {
+    const cancel = vi.fn(() => Promise.resolve());
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce({ done: false, value: new Uint8Array(4_097) })
+      .mockImplementation(() => new Promise(() => undefined));
+    const response = {
+      ok: false,
+      status: 400,
+      headers: new Headers(),
+      body: { getReader: () => ({ read, cancel }) },
+    } as unknown as Response;
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(response));
+
+    const error = await capturedError(provider(fetchMock).decide(input()));
+
+    expectSafeProviderError(error, "agent_provider_rejected");
+    expect(read).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a diagnostics read failure best-effort and safely classified", async () => {
+    const cancel = vi.fn(() => Promise.resolve());
+    const read = vi.fn(() => Promise.reject(new Error("provider body read secret")));
+    const response = {
+      ok: false,
+      status: 400,
+      headers: new Headers(),
+      body: { getReader: () => ({ read, cancel }) },
+    } as unknown as Response;
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(response));
+
+    const error = await capturedError(provider(fetchMock).decide(input()));
+
+    expectSafeProviderError(error, "agent_provider_rejected");
+    expect(String(error)).not.toContain("provider body read secret");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("times out provider error diagnostics reads without replacing the HTTP error", async () => {
+    vi.useFakeTimers();
+    let markReadStarted!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    const cancel = vi.fn(() => Promise.resolve());
+    const read = vi.fn(() => {
+      markReadStarted();
+      return new Promise<never>(() => undefined);
+    });
+    const response = {
+      ok: false,
+      status: 400,
+      headers: new Headers(),
+      body: { getReader: () => ({ read, cancel }) },
+    } as unknown as Response;
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(response));
+    const decision = provider(fetchMock).decide(input({
+      limits: { timeoutMs: 100, maxAttempts: 2, responseMaxBytes: 65_536 },
+    }));
+    const assertion = expect(decision).rejects.toMatchObject({ code: "agent_provider_rejected" });
+
+    await readStarted;
+    await vi.advanceTimersByTimeAsync(250);
+    await assertion;
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("retries an adapter timeout once and keeps timeout taxonomy", async () => {
@@ -724,19 +857,10 @@ describe("OpenAI-compatible Agent decision provider", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not accept a logging dependency", () => {
-    expect(
-      Object.getOwnPropertyNames(
-        new OpenAICompatibleAgentDecisionProvider({
-          baseUrl: "https://provider.example",
-          apiKey: "key",
-          model: "model",
-        }),
-      ),
-    ).not.toContain("logger");
+  it("validates required provider configuration", () => {
     expect(() =>
       new OpenAICompatibleAgentDecisionProvider({
-        baseUrl: " ", apiKey: "key", model: "model",
+        baseUrl: " ", apiKey: "key", model: "model", logger: {} as Logger,
       }),
     ).toThrow(TypeError);
   });
