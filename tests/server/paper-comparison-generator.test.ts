@@ -37,25 +37,115 @@ const sources: PaperComparisonSource[] = [
   },
 ];
 
-const content: PaperComparisonGeneratedContent = {
-  overview: "The abstracts state related but distinct research focuses.",
-  similarities: [],
-  dimensions: [
-    {
-      label: "Research focus",
-      observations: sources.map((source) => ({
-        paperId: source.id,
-        statement: source.abstract,
-      })),
-    },
-  ],
-};
+const additionalSources: PaperComparisonSource[] = [
+  {
+    id: "60000000-0000-4000-8000-000000000003",
+    versionedArxivId: "2501.00003v1",
+    version: 1,
+    title: "Grounded comparison three",
+    abstract: "The third abstract states another supported research focus.",
+    authors: ["Mina Scientist"],
+    primaryCategory: "cs.CL",
+    categories: ["cs.CL"],
+    publishedAt: new Date("2025-01-05T00:00:00.000Z"),
+    updatedAt: new Date("2025-01-06T00:00:00.000Z"),
+  },
+  {
+    id: "60000000-0000-4000-8000-000000000004",
+    versionedArxivId: "2501.00004v3",
+    version: 3,
+    title: "Grounded comparison four",
+    abstract: "The fourth abstract states a final supported research focus.",
+    authors: ["Noah Analyst"],
+    primaryCategory: "stat.ML",
+    categories: ["stat.ML"],
+    publishedAt: new Date("2025-01-07T00:00:00.000Z"),
+    updatedAt: new Date("2025-01-08T00:00:00.000Z"),
+  },
+];
 
-function successResponse(comparison: unknown = content): Response {
+const allSources = [...sources, ...additionalSources];
+
+function contentFor(selectedSources: PaperComparisonSource[]): PaperComparisonGeneratedContent {
+  return {
+    overview: "The abstracts state related but distinct research focuses.",
+    similarities: [],
+    dimensions: [
+      {
+        label: "Research focus",
+        observations: selectedSources.map((source) => ({
+          paperId: source.id,
+          statement: source.abstract,
+        })),
+      },
+    ],
+  };
+}
+
+const content = contentFor(sources);
+
+function completionResponse({
+  comparison = content,
+  contentOverride,
+  finishReason = "stop",
+  refusal = null,
+  omitContent = false,
+}: {
+  comparison?: unknown;
+  contentOverride?: string | null;
+  finishReason?: string | null;
+  refusal?: string | null;
+  omitContent?: boolean;
+} = {}): Response {
+  const message: Record<string, unknown> = { refusal };
+  if (!omitContent) {
+    message.content = contentOverride === undefined
+      ? JSON.stringify(comparison)
+      : contentOverride;
+  }
   return new Response(
-    JSON.stringify({ choices: [{ message: { content: JSON.stringify(comparison) } }] }),
+    JSON.stringify({ choices: [{ finish_reason: finishReason, message }] }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
+}
+
+function successResponse(comparison: unknown = content): Response {
+  return completionResponse({ comparison });
+}
+
+interface CapturedProviderRequest {
+  messages: Array<{ content: string }>;
+  response_format: {
+    type: string;
+    json_schema: {
+      strict: boolean;
+      schema: {
+        properties: {
+          dimensions: {
+            items: {
+              properties: {
+                observations: {
+                  minItems: number;
+                  maxItems: number;
+                  items: {
+                    properties: {
+                      paperId: { enum: string[] };
+                    };
+                  };
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+}
+
+function capturedRequest(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>): CapturedProviderRequest {
+  const init = fetchMock.mock.calls[0]?.[1];
+  if (typeof init?.body !== "string") throw new Error("Expected a JSON request body.");
+  return JSON.parse(init.body) as CapturedProviderRequest;
 }
 
 function generator(fetchFn: typeof fetch) {
@@ -95,11 +185,12 @@ describe("OpenAI-compatible paper comparison generator", () => {
       Authorization: "Bearer test-key",
       "Content-Type": "application/json",
     });
-    if (typeof init?.body !== "string") throw new Error("Expected a JSON request body.");
-    const body = JSON.parse(init.body) as { messages: Array<{ content: string }> };
+    const body = capturedRequest(fetchMock);
     expect(body.messages[0]?.content).toContain("UNTRUSTED REFERENCE DATA");
     expect(body.messages[0]?.content).toContain("Do not use outside knowledge");
     expect(body.messages[0]?.content).toContain("do not claim access to full text");
+    expect(body.response_format.type).toBe("json_schema");
+    expect(body.response_format.json_schema.strict).toBe(true);
     const sentSources = JSON.parse(body.messages[1].content) as Array<Record<string, unknown>>;
     expect(sentSources).toHaveLength(2);
     expect(Object.keys(sentSources[0]).sort()).toEqual([
@@ -116,16 +207,55 @@ describe("OpenAI-compatible paper comparison generator", () => {
     ]);
   });
 
+  it.each([2, 3, 4])(
+    "constrains structured observations to exactly %i selected paper IDs",
+    async (count) => {
+      const selectedSources = allSources.slice(0, count);
+      const expected = contentFor(selectedSources);
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(successResponse(expected));
+
+      await expect(generator(fetchMock).generate(selectedSources)).resolves.toEqual(expected);
+
+      const schema = capturedRequest(fetchMock).response_format.json_schema.schema;
+      const observations = schema.properties.dimensions.items.properties.observations;
+      expect(observations.minItems).toBe(count);
+      expect(observations.maxItems).toBe(count);
+      expect(observations.items.properties.paperId.enum).toEqual(
+        selectedSources.map(({ id }) => id),
+      );
+    },
+  );
+
+  it.each([
+    ["length completion", completionResponse({ finishReason: "length" })],
+    [
+      "content-filter completion",
+      completionResponse({ finishReason: "content_filter", contentOverride: null }),
+    ],
+    [
+      "refusal",
+      completionResponse({ refusal: "The provider refused the request.", contentOverride: null }),
+    ],
+    ["empty content", completionResponse({ contentOverride: "" })],
+    ["missing content", completionResponse({ omitContent: true })],
+  ])("rejects %s safely without retry", async (_label, response) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response);
+    await expectGeneratorError(
+      generator(fetchMock).generate(sources),
+      "COMPARISON_INVALID_RESPONSE",
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["invalid outer JSON", new Response("not json", { status: 200 })],
     ["missing choices", new Response(JSON.stringify({}), { status: 200 })],
+    ["truncated generated JSON", completionResponse({ contentOverride: '{"overview":"cut' })],
     [
       "Markdown fences",
-      new Response(
-        JSON.stringify({ choices: [{ message: { content: `\`\`\`json\n${JSON.stringify(content)}\n\`\`\`` } }] }),
-        { status: 200 },
-      ),
+      completionResponse({ contentOverride: `\`\`\`json\n${JSON.stringify(content)}\n\`\`\`` }),
     ],
+    ["prose plus JSON", completionResponse({ contentOverride: `Result:\n${JSON.stringify(content)}` })],
     ["invalid generated schema", successResponse({ ...content, overview: "" })],
   ])("rejects %s without retry", async (_label, response) => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response);
@@ -133,6 +263,49 @@ describe("OpenAI-compatible paper comparison generator", () => {
       generator(fetchMock).generate(sources),
       "COMPARISON_INVALID_RESPONSE",
     );
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each(["wrong", "missing", "duplicate"])(
+    "rejects %s paper IDs at the provider boundary",
+    async (kind) => {
+      const selectedSources = allSources.slice(0, 3);
+      const invalid = contentFor(selectedSources);
+      const observations = invalid.dimensions[0]?.observations;
+      if (!observations) throw new Error("Expected comparison observations.");
+      if (kind === "wrong") {
+        observations[0] = {
+          ...observations[0],
+          paperId: "60000000-0000-4000-8000-000000000099",
+        };
+      }
+      if (kind === "missing") observations.pop();
+      if (kind === "duplicate") observations[0] = { ...observations[0], paperId: observations[1].paperId };
+
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(successResponse(invalid));
+      await expectGeneratorError(
+        generator(fetchMock).generate(selectedSources),
+        "COMPARISON_INVALID_RESPONSE",
+      );
+      expect(fetchMock).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("does not expose malformed provider content through its stable error", async () => {
+    const privateContent = "private abstract and sk-secret are not JSON";
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      completionResponse({ contentOverride: privateContent }),
+    );
+
+    try {
+      await generator(fetchMock).generate(sources);
+      throw new Error("Expected paper comparison generation to fail.");
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(PaperComparisonGeneratorError);
+      expect((error as Error).message).not.toContain(privateContent);
+      expect((error as Error).message).not.toContain("sk-secret");
+      expect((error as Error).message).not.toContain("UNTRUSTED REFERENCE DATA");
+    }
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
