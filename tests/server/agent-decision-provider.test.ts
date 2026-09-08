@@ -229,44 +229,51 @@ describe("Agent decision action definitions", () => {
           description:
             "Submit the final grounded answer. Cite only evidence identifiers exposed in the decision context, or use insufficient_context with no evidence identifiers.",
           parameters: {
-            oneOf: [
-              {
-                type: "object",
-                properties: {
-                  status: { type: "string", const: "answered" },
-                  answer: { type: "string", minLength: 1, maxLength: 8_000 },
-                  evidenceIds: {
-                    minItems: 1,
-                    maxItems: 32,
-                    type: "array",
-                    items: {
-                      type: "string",
-                      pattern: "^E(?:[1-9]|[12][0-9]|3[0-2])$",
+            type: "object",
+            properties: {
+              result: {
+                oneOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      status: { type: "string", const: "answered" },
+                      answer: { type: "string", minLength: 1, maxLength: 8_000 },
+                      evidenceIds: {
+                        minItems: 1,
+                        maxItems: 32,
+                        type: "array",
+                        items: {
+                          type: "string",
+                          pattern: "^E(?:[1-9]|[12][0-9]|3[0-2])$",
+                        },
+                      },
                     },
+                    required: ["status", "answer", "evidenceIds"],
+                    additionalProperties: false,
                   },
-                },
-                required: ["status", "answer", "evidenceIds"],
-                additionalProperties: false,
-              },
-              {
-                type: "object",
-                properties: {
-                  status: { type: "string", const: "insufficient_context" },
-                  answer: { type: "string", minLength: 1, maxLength: 8_000 },
-                  evidenceIds: {
-                    minItems: 0,
-                    maxItems: 0,
-                    type: "array",
-                    items: {
-                      type: "string",
-                      pattern: "^E(?:[1-9]|[12][0-9]|3[0-2])$",
+                  {
+                    type: "object",
+                    properties: {
+                      status: { type: "string", const: "insufficient_context" },
+                      answer: { type: "string", minLength: 1, maxLength: 8_000 },
+                      evidenceIds: {
+                        minItems: 0,
+                        maxItems: 0,
+                        type: "array",
+                        items: {
+                          type: "string",
+                          pattern: "^E(?:[1-9]|[12][0-9]|3[0-2])$",
+                        },
+                      },
                     },
+                    required: ["status", "answer", "evidenceIds"],
+                    additionalProperties: false,
                   },
-                },
-                required: ["status", "answer", "evidenceIds"],
-                additionalProperties: false,
+                ],
               },
-            ],
+            },
+            required: ["result"],
+            additionalProperties: false,
           },
         },
       },
@@ -346,13 +353,41 @@ describe("OpenAI-compatible Agent decision provider", () => {
     },
   ] as const)("accepts a valid final-answer action", async (result) => {
     const fetchMock = vi.fn<typeof fetch>(() =>
-      Promise.resolve(jsonResponse(toolCallEnvelope("submit_final_answer", result))),
+      Promise.resolve(jsonResponse(toolCallEnvelope("submit_final_answer", { result }))),
     );
     const decision = await provider(fetchMock).decide(input());
     expect(decision).toEqual({ kind: "final_answer", result });
     expect(Object.isFrozen(decision)).toBe(true);
     expect(decision.kind === "final_answer" && Object.isFrozen(decision.result.evidenceIds))
       .toBe(true);
+  });
+
+  it.each([
+    ["missing result", {}],
+    ["malformed result", {
+      result: {
+        status: "answered",
+        answer: "Unsupported marker [E2]",
+        evidenceIds: ["E1"],
+      },
+    }],
+    ["unexpected outer field", {
+      result: {
+        status: "insufficient_context",
+        answer: "The supplied evidence is insufficient.",
+        evidenceIds: [],
+      },
+      unexpected: true,
+    }],
+  ])("rejects final-answer provider arguments with %s", async (_label, arguments_) => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(jsonResponse(toolCallEnvelope("submit_final_answer", arguments_))),
+    );
+
+    expectSafeProviderError(
+      await capturedError(provider(fetchMock).decide(input())),
+      "agent_provider_invalid_response",
+    );
   });
 
   it.each([
@@ -435,9 +470,11 @@ describe("OpenAI-compatible Agent decision provider", () => {
       .mockResolvedValueOnce(jsonResponse(malformed))
       .mockResolvedValueOnce(
         jsonResponse(toolCallEnvelope("submit_final_answer", {
-          status: "answered",
-          answer: "Unsupported marker [E2]",
-          evidenceIds: ["E1"],
+          result: {
+            status: "answered",
+            answer: "Unsupported marker [E2]",
+            evidenceIds: ["E1"],
+          },
         })),
       );
     expectSafeProviderError(await capturedError(provider(fetchMock).decide(input())), "agent_provider_invalid_response");

@@ -53,6 +53,9 @@ const providerErrorDiagnosticMaxBytes = 4_096;
 const providerErrorDiagnosticReadTimeoutMs = 250;
 const providerDiagnosticValueMaxCharacters = 256;
 const providerRequestIdHeaders = ["x-request-id"] as const;
+const submitFinalAnswerProviderArgumentsSchema = z
+  .object({ result: agentFinalResultSchema })
+  .strict();
 const textEncoder = new TextEncoder();
 const diagnosticReadTimedOut = Symbol("diagnosticReadTimedOut");
 
@@ -118,7 +121,10 @@ function prepareActions(
 
     let jsonSchema: unknown;
     try {
-      jsonSchema = z.toJSONSchema(action.argumentsSchema, { target: "draft-7" });
+      const providerArgumentsSchema = action.kind === "control"
+        ? submitFinalAnswerProviderArgumentsSchema
+        : action.argumentsSchema;
+      jsonSchema = z.toJSONSchema(providerArgumentsSchema, { target: "draft-7" });
     } catch {
       throw new TypeError("Agent decision action schema cannot be projected.");
     }
@@ -395,7 +401,9 @@ function parseDecision(
     throw invalidResponse();
   }
   if (action.kind === "control") {
-    const parsedResult = action.argumentsSchema.safeParse(rawArguments);
+    const parsedProviderArguments = submitFinalAnswerProviderArgumentsSchema.safeParse(rawArguments);
+    if (!parsedProviderArguments.success) throw invalidResponse();
+    const parsedResult = action.argumentsSchema.safeParse(parsedProviderArguments.data.result);
     if (!parsedResult.success) throw invalidResponse();
     return recursivelyFreeze({ kind: "final_answer" as const, result: parsedResult.data });
   }
