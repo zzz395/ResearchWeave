@@ -101,6 +101,7 @@ export function Component() {
     queryKey: researchQueryKeys.search(urlState),
     queryFn: () => searchResearchPapers({ ...urlState, pageSize: PAGE_SIZE }),
     enabled: hasSubmittedQuery,
+    retry: false,
   });
 
   function handleSort(sort: ResearchSort) {
