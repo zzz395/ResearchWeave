@@ -209,8 +209,21 @@ function uniqueInOrder(values: readonly string[]): string[] {
 const answeredFinalResultSchema = z
   .object({
     status: z.literal("answered"),
-    answer: z.string().trim().min(1).max(AGENT_FINAL_ANSWER_MAX_CHARACTERS),
-    evidenceIds: z.array(agentEvidenceIdSchema).min(1).max(AGENT_MAX_EVIDENCE),
+    answer: z
+      .string()
+      .trim()
+      .min(1)
+      .max(AGENT_FINAL_ANSWER_MAX_CHARACTERS)
+      .describe(
+        "Grounded answer text containing an inline marker such as [E1] for every cited evidence identifier.",
+      ),
+    evidenceIds: z
+      .array(agentEvidenceIdSchema)
+      .min(1)
+      .max(AGENT_MAX_EVIDENCE)
+      .describe(
+        "Unique evidence identifiers that exactly match the answer markers in first-appearance order.",
+      ),
   })
   .strict()
   .superRefine((value, context) => {
@@ -233,8 +246,16 @@ const answeredFinalResultSchema = z
 const insufficientContextFinalResultSchema = z
   .object({
     status: z.literal("insufficient_context"),
-    answer: z.string().trim().min(1).max(AGENT_FINAL_ANSWER_MAX_CHARACTERS),
-    evidenceIds: z.array(agentEvidenceIdSchema).length(0),
+    answer: z
+      .string()
+      .trim()
+      .min(1)
+      .max(AGENT_FINAL_ANSWER_MAX_CHARACTERS)
+      .describe("Explanation of insufficient context without evidence markers."),
+    evidenceIds: z
+      .array(agentEvidenceIdSchema)
+      .length(0)
+      .describe("Must be empty for insufficient_context."),
   })
   .strict()
   .refine((value) => evidenceMarkers(value.answer).length === 0, {
@@ -245,7 +266,9 @@ const insufficientContextFinalResultSchema = z
 export const agentFinalResultSchema = z.discriminatedUnion("status", [
   answeredFinalResultSchema,
   insufficientContextFinalResultSchema,
-]);
+]).describe(
+  "Answered results require one-to-one answer markers and evidenceIds in marker order; insufficient_context requires neither.",
+);
 
 const agentRunBaseShape = {
   id: z.string().uuid(),

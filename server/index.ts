@@ -154,6 +154,7 @@ if (environment.LLM_BASE_URL && environment.LLM_API_KEY && environment.LLM_MODEL
       baseUrl: environment.LLM_BASE_URL,
       apiKey: environment.LLM_API_KEY,
       model: environment.LLM_MODEL,
+      logger,
     });
     const toolRegistry = createResearchAgentToolRegistry({
       spaceService,

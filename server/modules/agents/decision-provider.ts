@@ -128,7 +128,7 @@ const submitFinalAnswerAction = Object.freeze({
   kind: "control" as const,
   name: SUBMIT_FINAL_ANSWER_ACTION_NAME,
   description:
-    "Submit the final grounded answer. Cite only evidence identifiers exposed in the decision context, or use insufficient_context with no evidence identifiers.",
+    "Submit the final grounded answer. For status answered, include inline markers such as [E1] in answer and set evidenceIds to the exact unique marker IDs in first-appearance order. Cite only evidence identifiers exposed in the decision context. For insufficient_context, use no markers and an empty evidenceIds array.",
   argumentsSchema: agentFinalResultSchema,
 });
 
