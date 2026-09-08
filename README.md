@@ -6,7 +6,7 @@ ResearchWeave is a TypeScript research workspace for small teams. It combines se
 
 ## Current status
 
-ResearchWeave has completed **Phase 10 — Product Integration Experience** through Phase 10A–10D, and the release baseline is `v0.10.0`. The delivered Phase 10 scope adds durable global workspace read models, the Overview and unified Activity experience, and Space-scoped abstract-based Saved Paper comparison. Final repository audit, clean-machine reproducibility, browser end-to-end validation, performance evaluation, portfolio polish, and deployment remain post-release work.
+ResearchWeave completed **Phase 10 — Product Integration Experience** through Phase 10A–10D with `v0.10.0`. The current release baseline is `v0.10.1`, a post-`v0.10.0` application-demo stability patch. The delivered Phase 10 scope adds durable global workspace read models, the Overview and unified Activity experience, and Space-scoped abstract-based Saved Paper comparison. Final repository audit, clean-machine reproducibility, browser end-to-end validation, performance evaluation, portfolio polish, and deployment remain post-release work.
 
 Implemented through Phase 10:
 

@@ -2,6 +2,17 @@
 
 All notable changes to ResearchWeave are documented in this file.
 
+## [0.10.1] - 2026-09-09
+
+This maintenance release closes the post-`v0.10.0` application-demo stability fixes without changing product scope.
+
+### Fixed
+
+- Isolated frontend account and actor transition state across authenticated sessions.
+- Bounded arXiv upstream failure handling with explicit non-success behavior.
+- Enforced structured output for abstract-based Saved Paper comparisons.
+- Improved Agent provider response compatibility and grounded final evidence citation handling.
+
 ## [0.10.0] - 2026-09-06
 
 Phase 10 product integration is complete through Phase 10A–10D. The release adds durable global workspace read models and an evidence-bounded Saved Paper comparison workflow while keeping post-release audit, reproducibility, and portfolio work explicit.
