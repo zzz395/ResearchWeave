@@ -227,18 +227,28 @@ describe("Agent decision action definitions", () => {
         function: {
           name: "submit_final_answer",
           description:
-            "Submit the final grounded answer. Cite only evidence identifiers exposed in the decision context, or use insufficient_context with no evidence identifiers.",
+            "Submit the final grounded answer. For status answered, include inline markers such as [E1] in answer and set evidenceIds to the exact unique marker IDs in first-appearance order. Cite only evidence identifiers exposed in the decision context. For insufficient_context, use no markers and an empty evidenceIds array.",
           parameters: {
             type: "object",
             properties: {
               result: {
+                description:
+                  "Answered results require one-to-one answer markers and evidenceIds in marker order; insufficient_context requires neither.",
                 oneOf: [
                   {
                     type: "object",
                     properties: {
                       status: { type: "string", const: "answered" },
-                      answer: { type: "string", minLength: 1, maxLength: 8_000 },
+                      answer: {
+                        description:
+                          "Grounded answer text containing an inline marker such as [E1] for every cited evidence identifier.",
+                        type: "string",
+                        minLength: 1,
+                        maxLength: 8_000,
+                      },
                       evidenceIds: {
+                        description:
+                          "Unique evidence identifiers that exactly match the answer markers in first-appearance order.",
                         minItems: 1,
                         maxItems: 32,
                         type: "array",
@@ -255,8 +265,14 @@ describe("Agent decision action definitions", () => {
                     type: "object",
                     properties: {
                       status: { type: "string", const: "insufficient_context" },
-                      answer: { type: "string", minLength: 1, maxLength: 8_000 },
+                      answer: {
+                        description: "Explanation of insufficient context without evidence markers.",
+                        type: "string",
+                        minLength: 1,
+                        maxLength: 8_000,
+                      },
                       evidenceIds: {
+                        description: "Must be empty for insufficient_context.",
                         minItems: 0,
                         maxItems: 0,
                         type: "array",
@@ -409,15 +425,42 @@ describe("OpenAI-compatible Agent decision provider", () => {
       .toBe(true);
   });
 
+  it("does not log response-validation diagnostics for valid decisions", async () => {
+    const warn = vi.fn();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(toolCallEnvelope("search_arxiv", { query: "valid" })))
+      .mockResolvedValueOnce(jsonResponse(toolCallEnvelope("submit_final_answer", {
+        result: {
+          status: "answered",
+          answer: "The evidence supports the answer [E1]",
+          evidenceIds: ["E1"],
+        },
+      })));
+    const decisionProvider = provider(fetchMock, { warn } as unknown as Logger);
+
+    await expect(decisionProvider.decide(input())).resolves.toMatchObject({ kind: "tool_call" });
+    await expect(decisionProvider.decide(input())).resolves.toMatchObject({ kind: "final_answer" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it.each([
-    ["missing result", {}],
-    ["malformed result", {
+    ["missing result", {}, "invalid_final_result_structure"],
+    ["invalid inner result", {
+      result: {
+        status: "answered",
+        answer: 42,
+        evidenceIds: ["E1"],
+      },
+    }, "invalid_final_result_structure"],
+    ["mismatched evidence marker", {
       result: {
         status: "answered",
         answer: "Unsupported marker [E2]",
         evidenceIds: ["E1"],
       },
-    }],
+    }, "citation_markers_mismatch"],
     ["unexpected outer field", {
       result: {
         status: "insufficient_context",
@@ -425,16 +468,97 @@ describe("OpenAI-compatible Agent decision provider", () => {
         evidenceIds: [],
       },
       unexpected: true,
-    }],
-  ])("rejects final-answer provider arguments with %s", async (_label, arguments_) => {
+    }, "invalid_final_result_structure"],
+  ])("rejects final-answer provider arguments with %s", async (_label, arguments_, validationReason) => {
+    const warn = vi.fn();
     const fetchMock = vi.fn<typeof fetch>(() =>
       Promise.resolve(jsonResponse(toolCallEnvelope("submit_final_answer", arguments_))),
     );
 
     expectSafeProviderError(
-      await capturedError(provider(fetchMock).decide(input())),
+      await capturedError(provider(fetchMock, { warn } as unknown as Logger).decide(input())),
       "agent_provider_invalid_response",
     );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledExactlyOnceWith({
+      validationStage: "final_action",
+      validationReason,
+      actionName: "submit_final_answer",
+      completedToolCallCount: 1,
+    }, "Agent decision provider response validation failed");
+  });
+
+  it.each([
+    [
+      "duplicate evidence identifiers",
+      {
+        status: "answered",
+        answer: "Two grounded references [E1] [E1]",
+        evidenceIds: ["E1", "E1"],
+      },
+      "evidence_ids_mismatch",
+    ],
+    [
+      "insufficient-context citations",
+      {
+        status: "insufficient_context",
+        answer: "The context is insufficient [E1]",
+        evidenceIds: [],
+      },
+      "citation_markers_mismatch",
+    ],
+    [
+      "invalid evidence identifier",
+      {
+        status: "answered",
+        answer: "Grounded by a malformed identifier [E0]",
+        evidenceIds: ["E0"],
+      },
+      "evidence_ids_mismatch",
+    ],
+    [
+      "unknown status",
+      {
+        status: "complete",
+        answer: "Grounded answer [E1]",
+        evidenceIds: ["E1"],
+      },
+      "status_mismatch",
+    ],
+    [
+      "empty answer",
+      {
+        status: "answered",
+        answer: "   ",
+        evidenceIds: ["E1"],
+      },
+      "empty_answer",
+    ],
+    [
+      "other semantic constraints",
+      {
+        status: "answered",
+        answer: `${"x".repeat(8_001)} [E1]`,
+        evidenceIds: ["E1"],
+      },
+      "invalid_result_semantics",
+    ],
+  ])("diagnoses %s without changing final-result rejection", async (_label, result, validationReason) => {
+    const warn = vi.fn();
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(jsonResponse(
+      toolCallEnvelope("submit_final_answer", { result }),
+    )));
+
+    expectSafeProviderError(
+      await capturedError(provider(fetchMock, { warn } as unknown as Logger).decide(input())),
+      "agent_provider_invalid_response",
+    );
+    expect(warn).toHaveBeenCalledExactlyOnceWith({
+      validationStage: "final_action",
+      validationReason,
+      actionName: "submit_final_answer",
+      completedToolCallCount: 1,
+    }, "Agent decision provider response validation failed");
   });
 
   it.each([
@@ -476,6 +600,29 @@ describe("OpenAI-compatible Agent decision provider", () => {
     );
   });
 
+  it("diagnoses non-empty assistant content without logging provider text", async () => {
+    const sensitiveContent = "SENSITIVE ASSISTANT PROSE";
+    const envelope = toolCallEnvelope("search_arxiv", { query: "valid" });
+    Object.assign(envelope.choices[0].message, { content: sensitiveContent });
+    const warn = vi.fn();
+    const logger = { warn } as unknown as Logger;
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(jsonResponse(envelope, {
+      headers: { "x-request-id": "req_validation_123" },
+    })));
+
+    const error = await capturedError(provider(fetchMock, logger).decide(input()));
+
+    expectSafeProviderError(error, "agent_provider_invalid_response");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledExactlyOnceWith({
+      validationStage: "message",
+      validationReason: "non_empty_assistant_content",
+      completedToolCallCount: 1,
+    }, "Agent decision provider response validation failed");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(sensitiveContent);
+    expect(`${String(error)} ${JSON.stringify(error)}`).not.toContain(sensitiveContent);
+  });
+
   it.each([
     "unknown_tool",
     "Search_Arxiv",
@@ -490,6 +637,27 @@ describe("OpenAI-compatible Agent decision provider", () => {
       provider(fetchMock).decide(input({ offeredActions: limitedActions })),
     );
     expectSafeProviderError(error, "agent_provider_invalid_response");
+  });
+
+  it("redacts an unoffered provider action name to the fixed unrecognized value", async () => {
+    const sensitiveActionName = "SENSITIVE_PROVIDER_ACTION";
+    const warn = vi.fn();
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(jsonResponse(
+      toolCallEnvelope(sensitiveActionName, { query: "valid" }),
+    )));
+
+    const error = await capturedError(
+      provider(fetchMock, { warn } as unknown as Logger).decide(input()),
+    );
+
+    expectSafeProviderError(error, "agent_provider_invalid_response");
+    expect(warn).toHaveBeenCalledExactlyOnceWith({
+      validationStage: "function_call",
+      validationReason: "action_not_offered",
+      actionName: "unrecognized",
+      completedToolCallCount: 1,
+    }, "Agent decision provider response validation failed");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(sensitiveActionName);
   });
 
   it.each([
@@ -508,10 +676,32 @@ describe("OpenAI-compatible Agent decision provider", () => {
     );
   });
 
+  it("logs only a matched offered action name when ordinary tool arguments are rejected", async () => {
+    const sensitiveArgument = "SENSITIVE TOOL ARGUMENT";
+    const warn = vi.fn();
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(jsonResponse(
+      toolCallEnvelope("search_arxiv", { query: sensitiveArgument, unexpected: true }),
+    )));
+
+    const error = await capturedError(
+      provider(fetchMock, { warn } as unknown as Logger).decide(input()),
+    );
+
+    expectSafeProviderError(error, "agent_provider_invalid_response");
+    expect(warn).toHaveBeenCalledExactlyOnceWith({
+      validationStage: "function_call",
+      validationReason: "tool_arguments_rejected",
+      actionName: "search_arxiv",
+      completedToolCallCount: 1,
+    }, "Agent decision provider response validation failed");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(sensitiveArgument);
+  });
+
   it("rejects malformed argument JSON and invalid final evidence markers", async () => {
     const malformed = toolCallEnvelope("search_arxiv", { query: "valid" });
     const call = malformed.choices[0].message.tool_calls[0];
     call.function.arguments = "{";
+    const warn = vi.fn();
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(malformed))
@@ -524,8 +714,24 @@ describe("OpenAI-compatible Agent decision provider", () => {
           },
         })),
       );
-    expectSafeProviderError(await capturedError(provider(fetchMock).decide(input())), "agent_provider_invalid_response");
-    expectSafeProviderError(await capturedError(provider(fetchMock).decide(input())), "agent_provider_invalid_response");
+    const decisionProvider = provider(fetchMock, { warn } as unknown as Logger);
+    expectSafeProviderError(await capturedError(decisionProvider.decide(input())), "agent_provider_invalid_response");
+    expectSafeProviderError(await capturedError(decisionProvider.decide(input())), "agent_provider_invalid_response");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls).toEqual([
+      [{
+        validationStage: "function_call",
+        validationReason: "arguments_invalid_json",
+        actionName: "search_arxiv",
+        completedToolCallCount: 1,
+      }, "Agent decision provider response validation failed"],
+      [{
+        validationStage: "final_action",
+        validationReason: "citation_markers_mismatch",
+        actionName: "submit_final_answer",
+        completedToolCallCount: 1,
+      }, "Agent decision provider response validation failed"],
+    ]);
   });
 
   it("fails unknown prompt versions and duplicate offered actions before transport", async () => {
@@ -541,19 +747,30 @@ describe("OpenAI-compatible Agent decision provider", () => {
   });
 
   it.each([
-    ["empty", new Response("")],
-    ["invalid UTF-8", new Response(new Uint8Array([0xff]))],
-    ["malformed JSON", new Response("{")],
-    ["malformed envelope", jsonResponse({ choices: "invalid" })],
-  ])("rejects an %s response body", async (_label, response) => {
+    ["empty", () => new Response(""), "response_body", "empty_body"],
+    ["invalid UTF-8", () => new Response(new Uint8Array([0xff])), "response_body", "invalid_utf8"],
+    ["malformed JSON", () => new Response("{"), "response_body", "invalid_json"],
+    ["malformed envelope", () => jsonResponse({ choices: "invalid" }), "choice", "invalid_choices_shape_or_count"],
+  ])("rejects an %s response body", async (_label, createResponse, validationStage, validationReason) => {
+    const warn = vi.fn();
+    const response = createResponse();
     const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(response));
     expectSafeProviderError(
-      await capturedError(provider(fetchMock).decide(input({ limits: { ...input().limits, maxAttempts: 1 } }))),
+      await capturedError(provider(fetchMock, { warn } as unknown as Logger).decide(
+        input({ limits: { ...input().limits, maxAttempts: 1 } }),
+      )),
       "agent_provider_invalid_response",
     );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledExactlyOnceWith({
+      validationStage,
+      validationReason,
+      completedToolCallCount: 1,
+    }, "Agent decision provider response validation failed");
   });
 
   it("rejects declared and streamed response overflow", async () => {
+    const warn = vi.fn();
     const declared = new Response("{}", { headers: { "content-length": "70000" } });
     const cancel = vi.fn(() => {
       throw new Error("cancel failure with secret response");
@@ -569,9 +786,36 @@ describe("OpenAI-compatible Agent decision provider", () => {
       .mockResolvedValueOnce(declared)
       .mockResolvedValueOnce(streamed);
     const smallLimit = input({ limits: { timeoutMs: 1_000, maxAttempts: 1, responseMaxBytes: 10 } });
-    expectSafeProviderError(await capturedError(provider(fetchMock).decide(smallLimit)), "agent_provider_invalid_response");
-    expectSafeProviderError(await capturedError(provider(fetchMock).decide(smallLimit)), "agent_provider_invalid_response");
+    const decisionProvider = provider(fetchMock, { warn } as unknown as Logger);
+    expectSafeProviderError(await capturedError(decisionProvider.decide(smallLimit)), "agent_provider_invalid_response");
+    expectSafeProviderError(await capturedError(decisionProvider.decide(smallLimit)), "agent_provider_invalid_response");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(cancel).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledTimes(2);
+    for (const [diagnostics, message] of warn.mock.calls) {
+      expect(diagnostics).toEqual({
+        validationStage: "response_body",
+        validationReason: "byte_limit_exceeded",
+        completedToolCallCount: 1,
+      });
+      expect(message).toBe("Agent decision provider response validation failed");
+    }
+  });
+
+  it("keeps response-validation diagnostics best-effort", async () => {
+    const warn = vi.fn(() => {
+      throw new Error("SENSITIVE LOGGER FAILURE");
+    });
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(new Response("{")));
+
+    const error = await capturedError(
+      provider(fetchMock, { warn } as unknown as Logger).decide(input()),
+    );
+
+    expectSafeProviderError(error, "agent_provider_invalid_response");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(`${String(error)} ${JSON.stringify(error)}`).not.toContain("SENSITIVE LOGGER FAILURE");
   });
 
   it.each([429, 502, 503, 504])("retries HTTP %i once", async (status) => {

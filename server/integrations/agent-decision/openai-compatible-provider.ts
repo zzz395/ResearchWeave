@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import {
   AGENT_CONTEXT_MAX_BYTES,
+  AGENT_MAX_EVIDENCE,
+  agentEvidenceIdSchema,
   agentFinalResultSchema,
   agentToolNameSchema,
 } from "../../../shared/contracts/agents";
@@ -59,6 +61,56 @@ const submitFinalAnswerProviderArgumentsSchema = z
 const textEncoder = new TextEncoder();
 const diagnosticReadTimedOut = Symbol("diagnosticReadTimedOut");
 
+type ProviderResponseValidationStage =
+  | "response_body"
+  | "choice"
+  | "message"
+  | "function_call"
+  | "final_action";
+
+type ProviderResponseValidationReason =
+  | "empty_body"
+  | "byte_limit_exceeded"
+  | "invalid_utf8"
+  | "invalid_json"
+  | "invalid_choices_shape_or_count"
+  | "invalid_choice_structure"
+  | "unexpected_finish_reason"
+  | "invalid_message_structure"
+  | "unknown_message_fields"
+  | "non_empty_assistant_content"
+  | "refusal_present"
+  | "invalid_tool_call_count"
+  | "invalid_function_call_structure"
+  | "action_not_offered"
+  | "arguments_invalid_json"
+  | "tool_arguments_rejected"
+  | "invalid_final_result_structure"
+  | "evidence_ids_mismatch"
+  | "citation_markers_mismatch"
+  | "status_mismatch"
+  | "empty_answer"
+  | "invalid_result_semantics";
+
+class ProviderResponseValidationError extends Error {
+  readonly validationStage: ProviderResponseValidationStage;
+  readonly validationReason: ProviderResponseValidationReason;
+  readonly actionName?: string;
+
+  constructor(
+    validationStage: ProviderResponseValidationStage,
+    validationReason: ProviderResponseValidationReason,
+    actionName?: string,
+  ) {
+    super("Agent decision provider response validation failed.");
+    this.name = "ProviderResponseValidationError";
+    this.validationStage = validationStage;
+    this.validationReason = validationReason;
+    this.actionName = actionName;
+    this.stack = undefined;
+  }
+}
+
 interface ProviderErrorDiagnostics {
   readonly providerRequestId?: string;
   readonly providerErrorType?: string;
@@ -99,6 +151,77 @@ function recursivelyFreeze<T>(value: T): T {
 
 function invalidResponse(): AgentDecisionProviderError {
   return new AgentDecisionProviderError("agent_provider_invalid_response");
+}
+
+function validationFailure(
+  validationStage: ProviderResponseValidationStage,
+  validationReason: ProviderResponseValidationReason,
+  actionName?: string,
+): ProviderResponseValidationError {
+  return new ProviderResponseValidationError(validationStage, validationReason, actionName);
+}
+
+function evidenceMarkers(answer: string): string[] {
+  return [...answer.matchAll(/\[(E\d+)\]/gu)].map((match) => match[1]);
+}
+
+function finalActionValidationFailure(
+  rawArguments: unknown,
+  actionName: string,
+): ProviderResponseValidationError {
+  if (
+    !isRecord(rawArguments) ||
+    !hasOnlyKeys(rawArguments, ["result"]) ||
+    !Object.prototype.hasOwnProperty.call(rawArguments, "result")
+  ) {
+    return validationFailure("final_action", "invalid_final_result_structure", actionName);
+  }
+
+  const result = rawArguments.result;
+  if (
+    !isRecord(result) ||
+    !hasOnlyKeys(result, ["status", "answer", "evidenceIds"]) ||
+    !Object.prototype.hasOwnProperty.call(result, "status") ||
+    !Object.prototype.hasOwnProperty.call(result, "answer") ||
+    !Object.prototype.hasOwnProperty.call(result, "evidenceIds") ||
+    typeof result.answer !== "string" ||
+    !Array.isArray(result.evidenceIds) ||
+    result.evidenceIds.some((evidenceId) => typeof evidenceId !== "string")
+  ) {
+    return validationFailure("final_action", "invalid_final_result_structure", actionName);
+  }
+
+  if (result.status !== "answered" && result.status !== "insufficient_context") {
+    return validationFailure("final_action", "status_mismatch", actionName);
+  }
+  if (result.answer.trim().length === 0) {
+    return validationFailure("final_action", "empty_answer", actionName);
+  }
+
+  const evidenceIds = result.evidenceIds as string[];
+  const evidenceIdsAreValid =
+    evidenceIds.length <= AGENT_MAX_EVIDENCE &&
+    evidenceIds.every((evidenceId) => agentEvidenceIdSchema.safeParse(evidenceId).success) &&
+    new Set(evidenceIds).size === evidenceIds.length;
+  if (
+    !evidenceIdsAreValid ||
+    (result.status === "answered" && evidenceIds.length === 0) ||
+    (result.status === "insufficient_context" && evidenceIds.length !== 0)
+  ) {
+    return validationFailure("final_action", "evidence_ids_mismatch", actionName);
+  }
+
+  const markers = evidenceMarkers(result.answer);
+  const uniqueMarkers = markers.filter((marker, index) => markers.indexOf(marker) === index);
+  if (
+    (result.status === "answered" &&
+      uniqueMarkers.join("\u0000") !== evidenceIds.join("\u0000")) ||
+    (result.status === "insufficient_context" && markers.length > 0)
+  ) {
+    return validationFailure("final_action", "citation_markers_mismatch", actionName);
+  }
+
+  return validationFailure("final_action", "invalid_result_semantics", actionName);
 }
 
 function prepareActions(
@@ -288,11 +411,11 @@ async function readBoundedJson(response: Response, maxBytes: number): Promise<un
     const declaredBytes = Number(contentLength);
     if (declaredBytes > maxBytes) {
       await cancelBody(response);
-      throw invalidResponse();
+      throw validationFailure("response_body", "byte_limit_exceeded");
     }
   }
 
-  if (!response.body) throw invalidResponse();
+  if (!response.body) throw validationFailure("response_body", "empty_body");
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let byteLength = 0;
@@ -307,12 +430,12 @@ async function readBoundedJson(response: Response, maxBytes: number): Promise<un
       } catch {
         // Cancellation is best-effort and must not replace the stable size error.
       }
-      throw invalidResponse();
+      throw validationFailure("response_body", "byte_limit_exceeded");
     }
     chunks.push(result.value);
   }
 
-  if (byteLength === 0) throw invalidResponse();
+  if (byteLength === 0) throw validationFailure("response_body", "empty_body");
   const bytes = new Uint8Array(byteLength);
   let offset = 0;
   for (const chunk of chunks) {
@@ -324,13 +447,13 @@ async function readBoundedJson(response: Response, maxBytes: number): Promise<un
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    throw invalidResponse();
+    throw validationFailure("response_body", "invalid_utf8");
   }
-  if (text.trim().length === 0) throw invalidResponse();
+  if (text.trim().length === 0) throw validationFailure("response_body", "empty_body");
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw invalidResponse();
+    throw validationFailure("response_body", "invalid_json");
   }
 }
 
@@ -339,7 +462,7 @@ function parseDecision(
   preparedActions: readonly PreparedAction[],
 ): AgentDecision {
   if (!isRecord(envelope) || !Array.isArray(envelope.choices) || envelope.choices.length !== 1) {
-    throw invalidResponse();
+    throw validationFailure("choice", "invalid_choices_shape_or_count");
   }
   const choices: unknown[] = envelope.choices;
   const choice: unknown = choices[0];
@@ -348,15 +471,18 @@ function parseDecision(
     !hasOnlyKeys(choice, ["index", "message", "finish_reason", "logprobs"]) ||
     (choice.index !== undefined &&
       (typeof choice.index !== "number" || !Number.isInteger(choice.index))) ||
-    (choice.logprobs !== undefined && choice.logprobs !== null) ||
-    choice.finish_reason !== "tool_calls" ||
-    !isRecord(choice.message)
+    (choice.logprobs !== undefined && choice.logprobs !== null)
   ) {
-    throw invalidResponse();
+    throw validationFailure("choice", "invalid_choice_structure");
+  }
+  if (choice.finish_reason !== "tool_calls") {
+    throw validationFailure("choice", "unexpected_finish_reason");
+  }
+  if (!isRecord(choice.message)) {
+    throw validationFailure("message", "invalid_message_structure");
   }
   const message = choice.message;
-  if (
-    !hasOnlyKeys(message, [
+  if (!hasOnlyKeys(message, [
       "role",
       "content",
       "refusal",
@@ -364,21 +490,34 @@ function parseDecision(
       "audio",
       "function_call",
       "tool_calls",
-    ]) ||
+    ])) {
+    throw validationFailure("message", "unknown_message_fields");
+  }
+  if (
     message.role !== "assistant" ||
-    (message.refusal !== undefined && message.refusal !== null) ||
     (message.annotations !== undefined &&
       message.annotations !== null &&
       !Array.isArray(message.annotations)) ||
     (message.audio !== undefined && message.audio !== null) ||
-    (message.function_call !== undefined && message.function_call !== null) ||
-    (message.content !== undefined &&
-      message.content !== null &&
-      (typeof message.content !== "string" || message.content.trim().length > 0)) ||
-    !Array.isArray(message.tool_calls) ||
-    message.tool_calls.length !== 1
+    (message.function_call !== undefined && message.function_call !== null)
   ) {
-    throw invalidResponse();
+    throw validationFailure("message", "invalid_message_structure");
+  }
+  if (message.refusal !== undefined && message.refusal !== null) {
+    throw validationFailure("message", "refusal_present");
+  }
+  if (
+    message.content !== undefined &&
+    message.content !== null &&
+    typeof message.content !== "string"
+  ) {
+    throw validationFailure("message", "invalid_message_structure");
+  }
+  if (typeof message.content === "string" && message.content.trim().length > 0) {
+    throw validationFailure("message", "non_empty_assistant_content");
+  }
+  if (!Array.isArray(message.tool_calls) || message.tool_calls.length !== 1) {
+    throw validationFailure("message", "invalid_tool_call_count");
   }
 
   const toolCalls: unknown[] = message.tool_calls;
@@ -391,7 +530,7 @@ function parseDecision(
     call.type !== "function" ||
     !isRecord(call.function)
   ) {
-    throw invalidResponse();
+    throw validationFailure("function_call", "invalid_function_call_structure");
   }
   const functionCall = call.function;
   if (
@@ -399,29 +538,41 @@ function parseDecision(
     typeof functionCall.name !== "string" ||
     typeof functionCall.arguments !== "string"
   ) {
-    throw invalidResponse();
+    throw validationFailure("function_call", "invalid_function_call_structure");
   }
 
   const action = preparedActions.find(
     (candidate) => candidate.definition.name === functionCall.name,
   )?.definition;
-  if (!action) throw invalidResponse();
+  if (!action) {
+    throw validationFailure("function_call", "action_not_offered", "unrecognized");
+  }
 
   let rawArguments: unknown;
   try {
     rawArguments = JSON.parse(functionCall.arguments) as unknown;
   } catch {
-    throw invalidResponse();
+    throw validationFailure("function_call", "arguments_invalid_json", action.name);
   }
   if (action.kind === "control") {
     const parsedProviderArguments = submitFinalAnswerProviderArgumentsSchema.safeParse(rawArguments);
-    if (!parsedProviderArguments.success) throw invalidResponse();
+    if (!parsedProviderArguments.success) {
+      throw finalActionValidationFailure(rawArguments, action.name);
+    }
     const parsedResult = action.argumentsSchema.safeParse(parsedProviderArguments.data.result);
-    if (!parsedResult.success) throw invalidResponse();
+    if (!parsedResult.success) {
+      throw validationFailure(
+        "final_action",
+        "invalid_result_semantics",
+        action.name,
+      );
+    }
     return recursivelyFreeze({ kind: "final_answer" as const, result: parsedResult.data });
   }
   const parsedArguments = action.argumentsSchema.safeParse(rawArguments);
-  if (!parsedArguments.success || !isRecord(parsedArguments.data)) throw invalidResponse();
+  if (!parsedArguments.success || !isRecord(parsedArguments.data)) {
+    throw validationFailure("function_call", "tool_arguments_rejected", action.name);
+  }
   return recursivelyFreeze({
     kind: "tool_call" as const,
     toolName: action.name,
@@ -499,6 +650,7 @@ export class OpenAICompatibleAgentDecisionProvider implements AgentDecisionProvi
           limitsResult.data.responseMaxBytes,
           input.signal,
           attempt,
+          contextResult.data.completedToolCalls.length,
         );
       } catch (error: unknown) {
         if (input.signal.aborted) throw input.signal.reason;
@@ -517,6 +669,7 @@ export class OpenAICompatibleAgentDecisionProvider implements AgentDecisionProvi
     responseMaxBytes: number,
     callerSignal: AbortSignal,
     attempt: number,
+    completedToolCallCount: number,
   ): Promise<AgentDecision> {
     const attemptController = new AbortController();
     let timedOut = false;
@@ -572,6 +725,22 @@ export class OpenAICompatibleAgentDecisionProvider implements AgentDecisionProvi
       if (providerHttpFailureClassified && isAgentDecisionProviderError(error)) throw error;
       if (timedOut) {
         throw new AgentDecisionProviderError("agent_provider_timeout", true);
+      }
+      if (error instanceof ProviderResponseValidationError) {
+        try {
+          this.#logger.warn(
+            {
+              validationStage: error.validationStage,
+              validationReason: error.validationReason,
+              ...(error.actionName === undefined ? {} : { actionName: error.actionName }),
+              completedToolCallCount,
+            },
+            "Agent decision provider response validation failed",
+          );
+        } catch {
+          // Diagnostics are best-effort and must not replace the stable provider error.
+        }
+        throw invalidResponse();
       }
       if (isAgentDecisionProviderError(error)) throw error;
       throw new AgentDecisionProviderError("agent_provider_unavailable", true);

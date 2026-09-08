@@ -57,7 +57,11 @@ describe("Agent orchestration prompt registry", () => {
     expect(prompt).toContain("authorization");
     expect(prompt).toContain("reasoning, analysis, a scratchpad, or chain-of-thought");
     expect(prompt).toContain("only evidence identifiers explicitly exposed");
-    expect(prompt).toContain("insufficient_context with no evidence identifiers");
+    expect(prompt).toContain("exact bracketed form such as [E1]");
+    expect(prompt).toContain("no missing or extra identifiers");
+    expect(prompt).toContain("same order as the markers' first appearance");
+    expect(prompt).toContain("insufficient_context with no evidence markers");
+    expect(prompt).toContain("an empty evidenceIds array");
     expect(prompt).toContain("abstract-only evidence");
   });
 });
