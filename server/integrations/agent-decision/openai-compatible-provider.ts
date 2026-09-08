@@ -356,9 +356,22 @@ function parseDecision(
   }
   const message = choice.message;
   if (
-    !hasOnlyKeys(message, ["role", "content", "refusal", "tool_calls"]) ||
+    !hasOnlyKeys(message, [
+      "role",
+      "content",
+      "refusal",
+      "annotations",
+      "audio",
+      "function_call",
+      "tool_calls",
+    ]) ||
     message.role !== "assistant" ||
     (message.refusal !== undefined && message.refusal !== null) ||
+    (message.annotations !== undefined &&
+      message.annotations !== null &&
+      !Array.isArray(message.annotations)) ||
+    (message.audio !== undefined && message.audio !== null) ||
+    (message.function_call !== undefined && message.function_call !== null) ||
     (message.content !== undefined &&
       message.content !== null &&
       (typeof message.content !== "string" || message.content.trim().length > 0)) ||

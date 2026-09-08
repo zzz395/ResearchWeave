@@ -340,6 +340,53 @@ describe("OpenAI-compatible Agent decision provider", () => {
     });
   });
 
+  it("accepts annotations metadata without propagating it into the Agent decision", async () => {
+    const envelope = toolCallEnvelope("search_arxiv", { query: "annotated result" });
+    Object.assign(envelope.choices[0].message, { annotations: [] });
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(jsonResponse(envelope)));
+
+    const decision = await provider(fetchMock).decide(input());
+
+    expect(decision).toEqual({
+      kind: "tool_call",
+      toolName: "search_arxiv",
+      arguments: { query: "annotated result", page: 1, pageSize: 5, sort: "relevance" },
+    });
+    expect(decision).not.toHaveProperty("annotations");
+  });
+
+  it("accepts null optional message metadata without propagating it", async () => {
+    const envelope = toolCallEnvelope("ask_knowledge", { query: "grounded answer" });
+    Object.assign(envelope.choices[0].message, {
+      annotations: null,
+      audio: null,
+      function_call: null,
+    });
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(jsonResponse(envelope)));
+
+    await expect(provider(fetchMock).decide(input())).resolves.toEqual({
+      kind: "tool_call",
+      toolName: "ask_knowledge",
+      arguments: { query: "grounded answer" },
+    });
+  });
+
+  it.each([
+    ["non-array annotations", { annotations: {} }],
+    ["non-null audio", { audio: { id: "audio_1" } }],
+    ["non-null legacy function call", { function_call: { name: "legacy", arguments: "{}" } }],
+    ["unknown message field", { unexpected_provider_field: true }],
+  ])("rejects a tool-call message with %s", async (_label, metadata) => {
+    const envelope = toolCallEnvelope("search_arxiv", { query: "valid" });
+    Object.assign(envelope.choices[0].message, metadata);
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(jsonResponse(envelope)));
+
+    expectSafeProviderError(
+      await capturedError(provider(fetchMock).decide(input())),
+      "agent_provider_invalid_response",
+    );
+  });
+
   it.each([
     {
       status: "answered",
