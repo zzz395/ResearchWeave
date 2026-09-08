@@ -55,6 +55,7 @@ describe("arXiv client request safety", () => {
   });
 
   it("times out each attempt and performs at most one retry", async () => {
+    const timeoutDelays: number[] = [];
     const fetchFn = fetchMock((_input, init) => {
       if (init?.signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
       return new Promise<Response>(() => undefined);
@@ -62,7 +63,8 @@ describe("arXiv client request safety", () => {
     const client = new ArxivClient({
       fetchFn,
       scheduler: immediateScheduler(),
-      setTimer: (callback) => {
+      setTimer: (callback, milliseconds) => {
+        timeoutDelays.push(milliseconds);
         callback();
         return 1 as unknown as ReturnType<typeof setTimeout>;
       },
@@ -71,6 +73,7 @@ describe("arXiv client request safety", () => {
 
     await expect(client.search({ q: "timeout" })).rejects.toMatchObject({ code: "ARXIV_TIMEOUT" });
     expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(timeoutDelays).toEqual([15_000, 15_000]);
   });
 
   it("retries one transient network failure and then succeeds", async () => {
@@ -87,7 +90,7 @@ describe("arXiv client request safety", () => {
     const fetchFn = fetchMock(() =>
       Promise.resolve(new Response("upstream unavailable", {
         status,
-        headers: status === 429 ? { "Retry-After": "4" } : undefined,
+        headers: status === 429 ? { "Retry-After": "3" } : undefined,
       })),
     );
     const client = new ArxivClient({ fetchFn, scheduler: immediateScheduler() });
@@ -140,7 +143,7 @@ describe("arXiv client request safety", () => {
     });
   });
 
-  it("schedules a retry through the same spacing gate and respects Retry-After", async () => {
+  it("schedules an inline retry through the same spacing gate for a small Retry-After", async () => {
     let clock = 20_000;
     const starts: number[] = [];
     const scheduler = new ArxivScheduler({
@@ -153,13 +156,123 @@ describe("arXiv client request safety", () => {
     const fetchFn = fetchMock(() => {
       starts.push(clock);
       return fetchFn.mock.calls.length === 1
-        ? Promise.resolve(new Response("limited", { status: 429, headers: { "Retry-After": "5" } }))
+        ? Promise.resolve(new Response("limited", { status: 429, headers: { "Retry-After": "3" } }))
         : Promise.resolve(new Response(successXml, { status: 200 }));
     });
     const client = new ArxivClient({ fetchFn, scheduler, now: () => clock });
 
     await expect(client.search({ q: "retry spacing" })).resolves.toMatchObject({ totalResults: 42 });
-    expect(starts).toEqual([20_000, 25_000]);
+    expect(starts).toEqual([20_000, 23_000]);
+  });
+
+  it("allows an inline retry for a future HTTP-date within the retry budget", async () => {
+    let clock = Date.parse("2026-09-08T05:00:00.000Z");
+    const starts: number[] = [];
+    const scheduler = new ArxivScheduler({
+      minimumSpacingMs: 0,
+      now: () => clock,
+      sleep: (milliseconds) => {
+        clock += milliseconds;
+        return Promise.resolve();
+      },
+    });
+    const retryAt = new Date(clock + 2_000).toUTCString();
+    const fetchFn = fetchMock(() => {
+      starts.push(clock);
+      return fetchFn.mock.calls.length === 1
+        ? Promise.resolve(new Response("limited", { status: 429, headers: { "Retry-After": retryAt } }))
+        : Promise.resolve(new Response(successXml, { status: 200 }));
+    });
+    const client = new ArxivClient({ fetchFn, scheduler, now: () => clock });
+
+    await expect(client.search({ q: "dated retry" })).resolves.toMatchObject({ totalResults: 42 });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(starts).toEqual([
+      Date.parse("2026-09-08T05:00:00.000Z"),
+      Date.parse("2026-09-08T05:00:02.000Z"),
+    ]);
+  });
+
+  it.each([
+    ["large numeric", "120"],
+    ["far-future HTTP-date", "Tue, 08 Sep 2026 05:02:00 GMT"],
+    ["numeric overflow", "9".repeat(400)],
+  ])("fails without a second fetch for %s Retry-After", async (_label, retryAfter) => {
+    const fetchFn = fetchMock(() =>
+      Promise.resolve(new Response("limited", {
+        status: 429,
+        headers: { "Retry-After": retryAfter },
+      })),
+    );
+    const client = new ArxivClient({
+      fetchFn,
+      scheduler: immediateScheduler(),
+      now: () => Date.parse("2026-09-08T05:00:00.000Z"),
+    });
+
+    await expect(client.search({ q: `excessive ${_label}` })).rejects.toMatchObject({
+      code: "ARXIV_RATE_LIMITED",
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["malformed", "NaN", "Infinity"])(
+    "keeps malformed Retry-After %s on the bounded retry path",
+    async (retryAfter) => {
+      const sleeps: number[] = [];
+      const scheduler = new ArxivScheduler({
+        now: () => Date.parse("2026-09-08T05:00:00.000Z"),
+        sleep: (milliseconds) => {
+          sleeps.push(milliseconds);
+          return Promise.resolve();
+        },
+      });
+      const fetchFn = fetchMock(() =>
+        Promise.resolve(new Response("limited", {
+          status: 429,
+          headers: { "Retry-After": retryAfter },
+        })),
+      );
+      const client = new ArxivClient({
+        fetchFn,
+        scheduler,
+        now: () => Date.parse("2026-09-08T05:00:00.000Z"),
+      });
+
+      await expect(client.search({ q: `malformed ${retryAfter}` })).rejects.toMatchObject({
+        code: "ARXIV_RATE_LIMITED",
+      });
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+      expect(sleeps).toEqual([3_000]);
+    },
+  );
+
+  it("keeps past HTTP-date Retry-After non-negative", async () => {
+    const sleeps: number[] = [];
+    const scheduler = new ArxivScheduler({
+      now: () => Date.parse("2026-09-08T05:00:00.000Z"),
+      sleep: (milliseconds) => {
+        sleeps.push(milliseconds);
+        return Promise.resolve();
+      },
+    });
+    const fetchFn = fetchMock(() =>
+      Promise.resolve(new Response("limited", {
+        status: 429,
+        headers: { "Retry-After": "Mon, 07 Sep 2026 05:00:00 GMT" },
+      })),
+    );
+    const client = new ArxivClient({
+      fetchFn,
+      scheduler,
+      now: () => Date.parse("2026-09-08T05:00:00.000Z"),
+    });
+
+    await expect(client.search({ q: "past retry date" })).rejects.toMatchObject({
+      code: "ARXIV_RATE_LIMITED",
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(sleeps).toEqual([3_000]);
   });
 });
 

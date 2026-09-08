@@ -14,6 +14,7 @@ import { globalArxivScheduler, type ArxivScheduler } from "./scheduler";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_INLINE_RETRY_AFTER_MS = 3_000;
 const TRANSIENT_HTTP_STATUSES = new Set([502, 503, 504]);
 
 interface ArxivClientOptions {
@@ -36,12 +37,28 @@ async function discardBody(response: Response) {
   }
 }
 
-function parseRetryAfter(value: string | null, now: () => number) {
-  if (!value) return undefined;
+interface RetryAfterPolicy {
+  retryable: boolean;
+  retryAfterMs?: number;
+}
+
+function parseRetryAfter(value: string | null, now: () => number): RetryAfterPolicy {
+  if (!value) return { retryable: true };
   const trimmed = value.trim();
-  if (/^\d+$/u.test(trimmed)) return Number(trimmed) * 1000;
+  if (/^\d+$/u.test(trimmed)) {
+    const seconds = Number(trimmed);
+    if (!Number.isFinite(seconds) || seconds > MAX_INLINE_RETRY_AFTER_MS / 1000) {
+      return { retryable: false };
+    }
+    return { retryable: true, retryAfterMs: seconds * 1000 };
+  }
   const timestamp = Date.parse(trimmed);
-  return Number.isNaN(timestamp) ? undefined : Math.max(0, timestamp - now());
+  if (!Number.isFinite(timestamp)) return { retryable: true };
+  const retryAfterMs = Math.max(0, timestamp - now());
+  if (!Number.isFinite(retryAfterMs) || retryAfterMs > MAX_INLINE_RETRY_AFTER_MS) {
+    return { retryable: false };
+  }
+  return { retryable: true, retryAfterMs };
 }
 
 export class ArxivClient {
@@ -140,12 +157,12 @@ export class ArxivClient {
       });
 
       if (response.status === 429) {
-        const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"), this.now);
+        const retryAfter = parseRetryAfter(response.headers.get("retry-after"), this.now);
         await discardBody(response);
         throw new ArxivIntegrationError(
           "ARXIV_RATE_LIMITED",
           "arXiv rate limited the metadata request.",
-          { retryable: true, retryAfterMs },
+          retryAfter,
         );
       }
 
